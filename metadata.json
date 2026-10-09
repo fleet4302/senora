@@ -1,0 +1,6 @@
+{
+  "name": "Sonora",
+  "description": "Self-hosted music streaming app with Soulseek audio sources and Apple Music styling.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
