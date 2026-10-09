@@ -8,13 +8,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 private val DarkColorScheme = darkColorScheme(
-    primary = SonoraRed,
-    onPrimary = Color.White,
+    primary = SonoraWhite,
+    onPrimary = SonoraBlack,
     primaryContainer = SonoraDarkCard,
-    onPrimaryContainer = SonoraRed,
-    secondary = SonoraPink,
-    onSecondary = Color.White,
-    tertiary = SonoraCoral,
+    onPrimaryContainer = SonoraWhite,
+    secondary = SonoraZinc300,
+    onSecondary = SonoraBlack,
+    tertiary = SonoraZinc400,
     background = SonoraDarkBackground,
     onBackground = SonoraDarkTextPrimary,
     surface = SonoraDarkSurface,
@@ -22,17 +22,17 @@ private val DarkColorScheme = darkColorScheme(
     surfaceVariant = SonoraDarkCard,
     onSurfaceVariant = SonoraDarkTextSecondary,
     outline = SonoraDarkBorder,
-    outlineVariant = Color(0xFF242426)
+    outlineVariant = SonoraZinc800
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = SonoraRed,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFFFECEF),
-    onPrimaryContainer = SonoraRed,
-    secondary = SonoraPink,
-    onSecondary = Color.White,
-    tertiary = SonoraCoral,
+    primary = SonoraBlack,
+    onPrimary = SonoraWhite,
+    primaryContainer = SonoraZinc100,
+    onPrimaryContainer = SonoraBlack,
+    secondary = SonoraZinc700,
+    onSecondary = SonoraWhite,
+    tertiary = SonoraZinc600,
     background = SonoraLightBackground,
     onBackground = SonoraLightTextPrimary,
     surface = SonoraLightSurface,
@@ -40,7 +40,7 @@ private val LightColorScheme = lightColorScheme(
     surfaceVariant = SonoraLightCard,
     onSurfaceVariant = SonoraLightTextSecondary,
     outline = SonoraLightBorder,
-    outlineVariant = Color(0xFFEBEBF0)
+    outlineVariant = SonoraZinc200
 )
 
 @Composable

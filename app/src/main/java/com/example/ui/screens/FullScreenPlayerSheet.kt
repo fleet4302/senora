@@ -103,8 +103,8 @@ fun FullScreenPlayerSheet(
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xFF280712),
-                        Color(0xFF140409),
+                        Color(0xFF18181B),
+                        Color(0xFF111113),
                         Color(0xFF09090B),
                         Color(0xFF000000)
                     )

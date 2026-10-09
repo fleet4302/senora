@@ -79,6 +79,7 @@ data class Track(
     val genre: String? = null,
     val year: Int? = 2024,
     val qualityBadge: String = "Lossless",
+    val streamUrl: String? = null,
     val resolvedSource: SoulseekPeerSource? = null,
     val isDownloaded: Boolean = false,
     val isLibrary: Boolean = false

@@ -9,7 +9,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
+import java.net.URLEncoder
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 class MusicBrainzCatalogProvider : CatalogProvider {
@@ -17,8 +20,8 @@ class MusicBrainzCatalogProvider : CatalogProvider {
     private val rateLimiter = RateLimiter(1000L)
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(6, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
         .addInterceptor { chain ->
             val original = chain.request()
             val requestWithUserAgent = original.newBuilder()
@@ -29,323 +32,394 @@ class MusicBrainzCatalogProvider : CatalogProvider {
         }
         .build()
 
-    // Curated rich catalog items for instant Apple Music-style discovery shelves
-    private val curatedAlbums = mutableListOf(
+    // In-memory cache of live-fetched albums and artists for rapid navigation
+    private val albumCache = ConcurrentHashMap<String, Album>()
+    private val artistCache = ConcurrentHashMap<String, Artist>()
+
+    // Seeded albums with authentic Cover Art Archive / Deezer covers & real master audio previews
+    private val defaultSeedAlbums = listOf(
         Album(
-            id = "mb-rg-ok-computer",
+            id = "dz-album-302127",
+            title = "Discovery",
+            artist = "Daft Punk",
+            artistId = "dz-art-27",
+            coverUrl = "https://cdn-images.dzcdn.net/images/cover/5718f7c81c27e0b2417e2a4c45224f8a/1000x1000-000000-80-0-0.jpg",
+            year = 2001,
+            genre = "Electronic / French House",
+            trackCount = 14,
+            qualitySummary = "FLAC 16-bit/44.1kHz · Soulseek Verified",
+            tracks = listOf(
+                Track("dz-tr-3135553", "One More Time", "Daft Punk", "Discovery", "dz-album-302127", 320, 1,
+                    coverUrl = "https://cdn-images.dzcdn.net/images/cover/5718f7c81c27e0b2417e2a4c45224f8a/500x500-000000-80-0-0.jpg",
+                    qualityBadge = "FLAC",
+                    streamUrl = "https://cdnt-preview.dzcdn.net/api/1/1/f/b/5/fb5f8b9ecf80fc57df84483bba7ca878.mp3"),
+                Track("dz-tr-3135554", "Aerodynamic", "Daft Punk", "Discovery", "dz-album-302127", 212, 2,
+                    coverUrl = "https://cdn-images.dzcdn.net/images/cover/5718f7c81c27e0b2417e2a4c45224f8a/500x500-000000-80-0-0.jpg",
+                    qualityBadge = "FLAC",
+                    streamUrl = "https://cdnt-preview.dzcdn.net/api/1/1/b/8/1/b81180d56565f6176378e9323ea58252.mp3"),
+                Track("dz-tr-3135555", "Digital Love", "Daft Punk", "Discovery", "dz-album-302127", 301, 3,
+                    coverUrl = "https://cdn-images.dzcdn.net/images/cover/5718f7c81c27e0b2417e2a4c45224f8a/500x500-000000-80-0-0.jpg",
+                    qualityBadge = "FLAC",
+                    streamUrl = "https://cdnt-preview.dzcdn.net/api/1/1/c/2/6/c26ce9b3fe191b9a910ecb5c4ea8bc54.mp3"),
+                Track("dz-tr-3135556", "Harder, Better, Faster, Stronger", "Daft Punk", "Discovery", "dz-album-302127", 224, 4,
+                    coverUrl = "https://cdn-images.dzcdn.net/images/cover/5718f7c81c27e0b2417e2a4c45224f8a/500x500-000000-80-0-0.jpg",
+                    qualityBadge = "FLAC",
+                    streamUrl = "https://cdnt-preview.dzcdn.net/api/1/1/6/7/1/67160cb8491c10744e7e6ba3dff52e0f.mp3")
+            )
+        ),
+        Album(
+            id = "dz-album-103248",
             title = "OK Computer",
             artist = "Radiohead",
-            artistId = "mb-art-radiohead",
-            coverUrl = "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&auto=format&fit=crop&q=80",
+            artistId = "dz-art-197",
+            coverUrl = "https://cdn-images.dzcdn.net/images/cover/361e68ce02f4f2ce90c4c478dc0b3b28/1000x1000-000000-80-0-0.jpg",
             year = 1997,
             genre = "Alternative Rock",
             trackCount = 12,
             qualitySummary = "FLAC 24-bit/96kHz · Soulseek Verified",
             tracks = listOf(
-                Track("mb-rec-airbag", "Airbag", "Radiohead", "OK Computer", "mb-rg-ok-computer", 284, 1, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-paranoid-android", "Paranoid Android", "Radiohead", "OK Computer", "mb-rg-ok-computer", 383, 2, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-subterranean-homesick-alien", "Subterranean Homesick Alien", "Radiohead", "OK Computer", "mb-rg-ok-computer", 267, 3, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-exit-music", "Exit Music (For a Film)", "Radiohead", "OK Computer", "mb-rg-ok-computer", 264, 4, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-let-down", "Let Down", "Radiohead", "OK Computer", "mb-rg-ok-computer", 299, 5, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-karma-police", "Karma Police", "Radiohead", "OK Computer", "mb-rg-ok-computer", 261, 6, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-fitter-happier", "Fitter Happier", "Radiohead", "OK Computer", "mb-rg-ok-computer", 117, 7, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-electioneering", "Electioneering", "Radiohead", "OK Computer", "mb-rg-ok-computer", 230, 8, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-climbing-up-walls", "Climbing Up the Walls", "Radiohead", "OK Computer", "mb-rg-ok-computer", 285, 9, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-no-surprises", "No Surprises", "Radiohead", "OK Computer", "mb-rg-ok-computer", 228, 10, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-lucky", "Lucky", "Radiohead", "OK Computer", "mb-rg-ok-computer", 259, 11, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-the-tourist", "The Tourist", "Radiohead", "OK Computer", "mb-rg-ok-computer", 324, 12, qualityBadge = "FLAC 24-bit")
+                Track("dz-tr-1109727", "Airbag", "Radiohead", "OK Computer", "dz-album-103248", 284, 1,
+                    coverUrl = "https://cdn-images.dzcdn.net/images/cover/361e68ce02f4f2ce90c4c478dc0b3b28/500x500-000000-80-0-0.jpg",
+                    qualityBadge = "FLAC 24-bit",
+                    streamUrl = "https://cdnt-preview.dzcdn.net/api/1/1/a/2/b/a2bfa54c59a58bb0e0ffb471cb736ea2.mp3"),
+                Track("dz-tr-1109728", "Paranoid Android", "Radiohead", "OK Computer", "dz-album-103248", 383, 2,
+                    coverUrl = "https://cdn-images.dzcdn.net/images/cover/361e68ce02f4f2ce90c4c478dc0b3b28/500x500-000000-80-0-0.jpg",
+                    qualityBadge = "FLAC 24-bit",
+                    streamUrl = "https://cdnt-preview.dzcdn.net/api/1/1/b/6/0/b60ec87c1220a27376c703d1544aa325.mp3"),
+                Track("dz-tr-1109732", "Karma Police", "Radiohead", "OK Computer", "dz-album-103248", 261, 6,
+                    coverUrl = "https://cdn-images.dzcdn.net/images/cover/361e68ce02f4f2ce90c4c478dc0b3b28/500x500-000000-80-0-0.jpg",
+                    qualityBadge = "FLAC 24-bit",
+                    streamUrl = "https://cdnt-preview.dzcdn.net/api/1/1/4/2/1/42152865b09fc08f972b2c9ad1bc59ae.mp3"),
+                Track("dz-tr-1109736", "No Surprises", "Radiohead", "OK Computer", "dz-album-103248", 228, 10,
+                    coverUrl = "https://cdn-images.dzcdn.net/images/cover/361e68ce02f4f2ce90c4c478dc0b3b28/500x500-000000-80-0-0.jpg",
+                    qualityBadge = "FLAC 24-bit",
+                    streamUrl = "https://cdnt-preview.dzcdn.net/api/1/1/6/6/c/66c0545f9c464c8c7f9bc8d62686708f.mp3")
             )
         ),
         Album(
-            id = "mb-rg-ram",
-            title = "Random Access Memories",
-            artist = "Daft Punk",
-            artistId = "mb-art-daft-punk",
-            coverUrl = "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&auto=format&fit=crop&q=80",
-            year = 2013,
-            genre = "Electronic / Nu-Disco",
-            trackCount = 13,
-            qualitySummary = "Hi-Res Lossless 24-bit/88.2kHz",
-            tracks = listOf(
-                Track("mb-rec-give-life-back", "Give Life Back to Music", "Daft Punk", "Random Access Memories", "mb-rg-ram", 274, 1, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-game-of-love", "The Game of Love", "Daft Punk", "Random Access Memories", "mb-rg-ram", 321, 2, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-giorgio", "Giorgio by Moroder", "Daft Punk", "Random Access Memories", "mb-rg-ram", 544, 3, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-within", "Within", "Daft Punk", "Random Access Memories", "mb-rg-ram", 228, 4, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-instant-crush", "Instant Crush (feat. Julian Casablancas)", "Daft Punk", "Random Access Memories", "mb-rg-ram", 337, 5, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-lose-yourself", "Lose Yourself to Dance (feat. Pharrell Williams)", "Daft Punk", "Random Access Memories", "mb-rg-ram", 353, 6, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-touch", "Touch (feat. Paul Williams)", "Daft Punk", "Random Access Memories", "mb-rg-ram", 498, 7, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-get-lucky", "Get Lucky (feat. Pharrell Williams)", "Daft Punk", "Random Access Memories", "mb-rg-ram", 369, 8, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-beyond", "Beyond", "Daft Punk", "Random Access Memories", "mb-rg-ram", 290, 9, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-motherboard", "Motherboard", "Daft Punk", "Random Access Memories", "mb-rg-ram", 341, 10, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-fragments", "Fragments of Time (feat. Todd Edwards)", "Daft Punk", "Random Access Memories", "mb-rg-ram", 279, 11, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-doin-it-right", "Doin' It Right (feat. Panda Bear)", "Daft Punk", "Random Access Memories", "mb-rg-ram", 251, 12, qualityBadge = "FLAC 24-bit"),
-                Track("mb-rec-contact", "Contact", "Daft Punk", "Random Access Memories", "mb-rg-ram", 381, 13, qualityBadge = "FLAC 24-bit")
-            )
-        ),
-        Album(
-            id = "mb-rg-currents",
+            id = "dz-album-10815152",
             title = "Currents",
             artist = "Tame Impala",
-            artistId = "mb-art-tame-impala",
-            coverUrl = "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=800&auto=format&fit=crop&q=80",
+            artistId = "dz-art-13864",
+            coverUrl = "https://cdn-images.dzcdn.net/images/cover/39116c4e09cb4e4db54c0e640ad52f86/1000x1000-000000-80-0-0.jpg",
             year = 2015,
             genre = "Psychedelic Pop",
             trackCount = 13,
-            qualitySummary = "FLAC Lossless 16-bit/44.1kHz",
+            qualitySummary = "FLAC 24-bit/96kHz · Soulseek Verified",
             tracks = listOf(
-                Track("mb-rec-let-it-happen", "Let It Happen", "Tame Impala", "Currents", "mb-rg-currents", 467, 1, qualityBadge = "FLAC"),
-                Track("mb-rec-nangs", "Nangs", "Tame Impala", "Currents", "mb-rg-currents", 107, 2, qualityBadge = "FLAC"),
-                Track("mb-rec-the-moment", "The Moment", "Tame Impala", "Currents", "mb-rg-currents", 255, 3, qualityBadge = "FLAC"),
-                Track("mb-rec-yes-im-changing", "Yes I'm Changing", "Tame Impala", "Currents", "mb-rg-currents", 270, 4, qualityBadge = "FLAC"),
-                Track("mb-rec-eventually", "Eventually", "Tame Impala", "Currents", "mb-rg-currents", 319, 5, qualityBadge = "FLAC"),
-                Track("mb-rec-the-less-i-know", "The Less I Know the Better", "Tame Impala", "Currents", "mb-rg-currents", 216, 6, qualityBadge = "FLAC"),
-                Track("mb-rec-past-life", "Past Life", "Tame Impala", "Currents", "mb-rg-currents", 227, 7, qualityBadge = "FLAC"),
-                Track("mb-rec-disciples", "Disciples", "Tame Impala", "Currents", "mb-rg-currents", 108, 8, qualityBadge = "FLAC"),
-                Track("mb-rec-cause-im-a-man", "'Cause I'm a Man", "Tame Impala", "Currents", "mb-rg-currents", 241, 9, qualityBadge = "FLAC"),
-                Track("mb-rec-reality-in-motion", "Reality in Motion", "Tame Impala", "Currents", "mb-rg-currents", 252, 10, qualityBadge = "FLAC"),
-                Track("mb-rec-love-paranoia", "Love/Paranoia", "Tame Impala", "Currents", "mb-rg-currents", 186, 11, qualityBadge = "FLAC"),
-                Track("mb-rec-new-person", "New Person, Same Old Mistakes", "Tame Impala", "Currents", "mb-rg-currents", 362, 12, qualityBadge = "FLAC")
-            )
-        ),
-        Album(
-            id = "mb-rg-selected-ambient",
-            title = "Selected Ambient Works 85-92",
-            artist = "Aphex Twin",
-            artistId = "mb-art-aphex-twin",
-            coverUrl = "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=800&auto=format&fit=crop&q=80",
-            year = 1992,
-            genre = "IDM / Ambient Techno",
-            trackCount = 13,
-            qualitySummary = "FLAC 16-bit · Original Warp Pressing",
-            tracks = listOf(
-                Track("mb-rec-xtal", "Xtal", "Aphex Twin", "Selected Ambient Works 85-92", "mb-rg-selected-ambient", 294, 1, qualityBadge = "FLAC"),
-                Track("mb-rec-tha", "Tha", "Aphex Twin", "Selected Ambient Works 85-92", "mb-rg-selected-ambient", 546, 2, qualityBadge = "FLAC"),
-                Track("mb-rec-pulsewidth", "Pulsewidth", "Aphex Twin", "Selected Ambient Works 85-92", "mb-rg-selected-ambient", 228, 3, qualityBadge = "FLAC"),
-                Track("mb-rec-ageispolis", "Ageispolis", "Aphex Twin", "Selected Ambient Works 85-92", "mb-rg-selected-ambient", 323, 4, qualityBadge = "FLAC"),
-                Track("mb-rec-i", "i", "Aphex Twin", "Selected Ambient Works 85-92", "mb-rg-selected-ambient", 77, 5, qualityBadge = "FLAC"),
-                Track("mb-rec-green-calx", "Green Calx", "Aphex Twin", "Selected Ambient Works 85-92", "mb-rg-selected-ambient", 365, 6, qualityBadge = "FLAC"),
-                Track("mb-rec-heliosphan", "Heliosphan", "Aphex Twin", "Selected Ambient Works 85-92", "mb-rg-selected-ambient", 291, 7, qualityBadge = "FLAC"),
-                Track("mb-rec-we-are-the-music", "We Are the Music Makers", "Aphex Twin", "Selected Ambient Works 85-92", "mb-rg-selected-ambient", 463, 8, qualityBadge = "FLAC"),
-                Track("mb-rec-schottkey", "Schottkey 7th Path", "Aphex Twin", "Selected Ambient Works 85-92", "mb-rg-selected-ambient", 267, 9, qualityBadge = "FLAC"),
-                Track("mb-rec-ptolemy", "Ptolemy", "Aphex Twin", "Selected Ambient Works 85-92", "mb-rg-selected-ambient", 430, 10, qualityBadge = "FLAC")
-            )
-        ),
-        Album(
-            id = "mb-rg-madvillainy",
-            title = "Madvillainy",
-            artist = "Madvillain (MF DOOM & Madlib)",
-            artistId = "mb-art-madvillain",
-            coverUrl = "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=800&auto=format&fit=crop&q=80",
-            year = 2004,
-            genre = "Underground Hip Hop",
-            trackCount = 22,
-            qualitySummary = "Stones Throw FLAC · Complete Folder",
-            tracks = listOf(
-                Track("mb-rec-accordion", "Accordion", "Madvillain", "Madvillainy", "mb-rg-madvillainy", 118, 1, qualityBadge = "FLAC"),
-                Track("mb-rec-meat-grinder", "Meat Grinder", "Madvillain", "Madvillainy", "mb-rg-madvillainy", 131, 2, qualityBadge = "FLAC"),
-                Track("mb-rec-bistro", "Bistro", "Madvillain", "Madvillainy", "mb-rg-madvillainy", 67, 3, qualityBadge = "FLAC"),
-                Track("mb-rec-raid", "Raid (feat. MED)", "Madvillain", "Madvillainy", "mb-rg-madvillainy", 150, 4, qualityBadge = "FLAC"),
-                Track("mb-rec-america-most-blunted", "America's Most Blunted", "Madvillain", "Madvillainy", "mb-rg-madvillainy", 234, 5, qualityBadge = "FLAC"),
-                Track("mb-rec-rainbows", "Rainbows", "Madvillain", "Madvillainy", "mb-rg-madvillainy", 171, 6, qualityBadge = "FLAC"),
-                Track("mb-rec-curls", "Curls", "Madvillain", "Madvillainy", "mb-rg-madvillainy", 95, 7, qualityBadge = "FLAC"),
-                Track("mb-rec-money-folder", "Money Folder", "Madvillain", "Madvillainy", "mb-rg-madvillainy", 182, 8, qualityBadge = "FLAC"),
-                Track("mb-rec-all-caps", "All Caps", "Madvillain", "Madvillainy", "mb-rg-madvillainy", 130, 9, qualityBadge = "FLAC")
-            )
-        ),
-        Album(
-            id = "mb-rg-music-has-the-right",
-            title = "Music Has the Right to Children",
-            artist = "Boards of Canada",
-            artistId = "mb-art-boc",
-            coverUrl = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop&q=80",
-            year = 1998,
-            genre = "Downtempo / IDM",
-            trackCount = 18,
-            qualitySummary = "Warp Records FLAC 16-bit",
-            tracks = listOf(
-                Track("mb-rec-wildflower", "Wildlife Analysis", "Boards of Canada", "Music Has the Right to Children", "mb-rg-music-has-the-right", 77, 1, qualityBadge = "FLAC"),
-                Track("mb-rec-an-eagle", "An Eagle in Your Mind", "Boards of Canada", "Music Has the Right to Children", "mb-rg-music-has-the-right", 383, 2, qualityBadge = "FLAC"),
-                Track("mb-rec-telephasic", "Telephasic Workshop", "Boards of Canada", "Music Has the Right to Children", "mb-rg-music-has-the-right", 395, 3, qualityBadge = "FLAC"),
-                Track("mb-rec-roygbiv", "Roygbiv", "Boards of Canada", "Music Has the Right to Children", "mb-rg-music-has-the-right", 151, 4, qualityBadge = "FLAC"),
-                Track("mb-rec-rue-the-whirl", "Rue the Whirl", "Boards of Canada", "Music Has the Right to Children", "mb-rg-music-has-the-right", 399, 5, qualityBadge = "FLAC"),
-                Track("mb-rec-aquarius", "Aquarius", "Boards of Canada", "Music Has the Right to Children", "mb-rg-music-has-the-right", 358, 6, qualityBadge = "FLAC"),
-                Track("mb-rec-olson", "Olson", "Boards of Canada", "Music Has the Right to Children", "mb-rg-music-has-the-right", 91, 7, qualityBadge = "FLAC"),
-                Track("mb-rec-petete", "Pete Standing Alone", "Boards of Canada", "Music Has the Right to Children", "mb-rg-music-has-the-right", 367, 8, qualityBadge = "FLAC")
+                Track("dz-tr-104595212", "The Less I Know the Better", "Tame Impala", "Currents", "dz-album-10815152", 216, 7,
+                    coverUrl = "https://cdn-images.dzcdn.net/images/cover/39116c4e09cb4e4db54c0e640ad52f86/500x500-000000-80-0-0.jpg",
+                    qualityBadge = "FLAC",
+                    streamUrl = "https://cdnt-preview.dzcdn.net/api/1/1/2/4/6/2464e8ca61661d900696ebfe3d44ba54.mp3"),
+                Track("dz-tr-104595200", "Let It Happen", "Tame Impala", "Currents", "dz-album-10815152", 467, 1,
+                    coverUrl = "https://cdn-images.dzcdn.net/images/cover/39116c4e09cb4e4db54c0e640ad52f86/500x500-000000-80-0-0.jpg",
+                    qualityBadge = "FLAC",
+                    streamUrl = "https://cdnt-preview.dzcdn.net/api/1/1/e/a/e/eae792d41b6c00223ae3b9f365d911b3.mp3")
             )
         )
     )
 
-    private val curatedArtists = listOf(
+    private val defaultSeedArtists = listOf(
         Artist(
-            id = "mb-art-radiohead",
-            name = "Radiohead",
-            imageUrl = "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&auto=format&fit=crop&q=80",
-            bio = "English rock band formed in Abingdon, Oxfordshire, widely celebrated for pioneering genre-bending alternative rock and electronic art rock.",
-            monthlyListeners = "18.4M",
-            topTracks = curatedAlbums[0].tracks.take(5),
-            albums = listOf(curatedAlbums[0])
-        ),
-        Artist(
-            id = "mb-art-daft-punk",
+            id = "dz-art-27",
             name = "Daft Punk",
-            imageUrl = "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800&auto=format&fit=crop&q=80",
+            imageUrl = "https://cdn-images.dzcdn.net/images/artist/19416b7137f7422f2f111bebb6705494/1000x1000-000000-80-0-0.jpg",
             bio = "Legendary French electronic music duo consisting of Thomas Bangalter and Guy-Manuel de Homem-Christo.",
             monthlyListeners = "24.1M",
-            topTracks = curatedAlbums[1].tracks.take(5),
-            albums = listOf(curatedAlbums[1])
+            topTracks = defaultSeedAlbums[0].tracks,
+            albums = listOf(defaultSeedAlbums[0])
         ),
         Artist(
-            id = "mb-art-tame-impala",
+            id = "dz-art-197",
+            name = "Radiohead",
+            imageUrl = "https://cdn-images.dzcdn.net/images/artist/f1ff2851f5c6f0595301826b5e0ee76b/1000x1000-000000-80-0-0.jpg",
+            bio = "English rock band formed in Abingdon, Oxfordshire, pioneering genre-bending alternative rock.",
+            monthlyListeners = "18.4M",
+            topTracks = defaultSeedAlbums[1].tracks,
+            albums = listOf(defaultSeedAlbums[1])
+        ),
+        Artist(
+            id = "dz-art-13864",
             name = "Tame Impala",
-            imageUrl = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=800&auto=format&fit=crop&q=80",
+            imageUrl = "https://cdn-images.dzcdn.net/images/artist/95a706ae56b1063df47ff2bc6efb0542/1000x1000-000000-80-0-0.jpg",
             bio = "Psych-pop musical project created by Australian multi-instrumentalist Kevin Parker.",
             monthlyListeners = "29.7M",
-            topTracks = curatedAlbums[2].tracks.take(5),
-            albums = listOf(curatedAlbums[2])
-        ),
-        Artist(
-            id = "mb-art-aphex-twin",
-            name = "Aphex Twin",
-            imageUrl = "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=800&auto=format&fit=crop&q=80",
-            bio = "Richard D. James, iconic Irish-British electronic composer and defining pioneer of ambient techno and braindance.",
-            monthlyListeners = "4.2M",
-            topTracks = curatedAlbums[3].tracks.take(5),
-            albums = listOf(curatedAlbums[3])
-        ),
-        Artist(
-            id = "mb-art-madvillain",
-            name = "Madvillain",
-            imageUrl = "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=800&auto=format&fit=crop&q=80",
-            bio = "Groundbreaking collaboration between MC MF DOOM and producer Madlib.",
-            monthlyListeners = "3.8M",
-            topTracks = curatedAlbums[4].tracks.take(5),
-            albums = listOf(curatedAlbums[4])
+            topTracks = defaultSeedAlbums[2].tracks,
+            albums = listOf(defaultSeedAlbums[2])
         )
     )
 
-    override suspend fun getListenNowAlbums(): List<Album> = curatedAlbums
-
-    override suspend fun getBrowseTrending(): List<Album> = curatedAlbums.shuffled()
-
-    override suspend fun getCuratedArtists(): List<Artist> = curatedArtists
-
-    override suspend fun getAlbumDetails(albumId: String): Album? {
-        return curatedAlbums.find { it.id == albumId }
+    init {
+        defaultSeedAlbums.forEach { albumCache[it.id] = it }
+        defaultSeedArtists.forEach { artistCache[it.id] = it }
     }
 
-    override suspend fun getArtistDetails(artistId: String): Artist? {
-        return curatedArtists.find { it.id == artistId }
+    override suspend fun getListenNowAlbums(): List<Album> = withContext(Dispatchers.IO) {
+        val liveAlbums = fetchLiveChartAlbums(limit = 25)
+        if (liveAlbums.isNotEmpty()) {
+            liveAlbums.forEach { albumCache[it.id] = it }
+            return@withContext liveAlbums
+        }
+        defaultSeedAlbums
     }
 
-    override suspend fun searchCatalog(query: String): CatalogSearchResult = withContext(Dispatchers.IO) {
-        val q = query.trim().lowercase()
-        if (q.isEmpty()) return@withContext CatalogSearchResult(query = query)
+    override suspend fun getBrowseTrending(): List<Album> = withContext(Dispatchers.IO) {
+        val liveAlbums = fetchLiveChartAlbums(limit = 30)
+        if (liveAlbums.isNotEmpty()) {
+            liveAlbums.forEach { albumCache[it.id] = it }
+            return@withContext liveAlbums.shuffled()
+        }
+        defaultSeedAlbums.shuffled()
+    }
 
-        // First check cached/curated items
-        val matchedAlbums = curatedAlbums.filter {
-            it.title.lowercase().contains(q) || it.artist.lowercase().contains(q)
+    override suspend fun getCuratedArtists(): List<Artist> = withContext(Dispatchers.IO) {
+        val liveArtists = fetchLiveChartArtists(limit = 15)
+        if (liveArtists.isNotEmpty()) {
+            liveArtists.forEach { artistCache[it.id] = it }
+            return@withContext liveArtists
         }
-        val matchedTracks = curatedAlbums.flatMap { it.tracks }.filter {
-            it.title.lowercase().contains(q) || it.artist.lowercase().contains(q)
-        }
-        val matchedArtists = curatedArtists.filter {
-            it.name.lowercase().contains(q)
-        }
+        defaultSeedArtists
+    }
 
-        if (matchedAlbums.isNotEmpty() || matchedTracks.isNotEmpty() || matchedArtists.isNotEmpty()) {
-            return@withContext CatalogSearchResult(
-                query = query,
-                topResult = matchedTracks.firstOrNull() ?: matchedAlbums.firstOrNull() ?: matchedArtists.firstOrNull(),
-                tracks = matchedTracks,
-                albums = matchedAlbums,
-                artists = matchedArtists
-            )
+    override suspend fun getAlbumDetails(albumId: String): Album? = withContext(Dispatchers.IO) {
+        albumCache[albumId]?.let { cached ->
+            if (cached.tracks.isNotEmpty()) return@withContext cached
         }
 
-        // Live MusicBrainz API query with rate limiter
+        // Live Deezer Album API query
+        val cleanId = albumId.removePrefix("dz-album-")
         try {
-            rateLimiter.acquire()
-            val url = "https://musicbrainz.org/ws/2/release-group/?query=${java.net.URLEncoder.encode(query, "UTF-8")}&limit=8&fmt=json"
+            val url = "https://api.deezer.com/album/$cleanId"
             val request = Request.Builder().url(url).build()
             val response = httpClient.newCall(request).execute()
             if (response.isSuccessful) {
                 val jsonStr = response.body?.string().orEmpty()
                 val json = JSONObject(jsonStr)
-                val releaseGroups = json.optJSONArray("release-groups")
-                val apiAlbums = mutableListOf<Album>()
-                val apiTracks = mutableListOf<Track>()
+                val title = json.optString("title", "Album")
+                val artistObj = json.optJSONObject("artist")
+                val artistName = artistObj?.optString("name", "Unknown Artist") ?: "Unknown Artist"
+                val artistId = artistObj?.optString("id", "") ?: ""
+                val coverUrl = json.optString("cover_xl", json.optString("cover_big", ""))
+                val year = json.optString("release_date").take(4).toIntOrNull() ?: 2024
+                val genresObj = json.optJSONObject("genres")?.optJSONArray("data")
+                val genre = genresObj?.optJSONObject(0)?.optString("name", "Music") ?: "Music"
 
-                if (releaseGroups != null) {
-                    for (i in 0 until minOf(releaseGroups.length(), 6)) {
-                        val rg = releaseGroups.getJSONObject(i)
-                        val id = rg.optString("id")
-                        val title = rg.optString("title")
-                        val artistCredit = rg.optJSONArray("artist-credit")
-                        val artistName = artistCredit?.optJSONObject(0)?.optString("name") ?: "Unknown Artist"
-                        val year = rg.optString("first-release-date").take(4).toIntOrNull() ?: 2022
-                        val coverUrl = "https://coverartarchive.org/release-group/$id/front-250"
+                val tracksArray = json.optJSONObject("tracks")?.optJSONArray("data")
+                val tracks = mutableListOf<Track>()
+                if (tracksArray != null) {
+                    for (i in 0 until tracksArray.length()) {
+                        val tObj = tracksArray.getJSONObject(i)
+                        val tId = tObj.optString("id")
+                        val tTitle = tObj.optString("title")
+                        val duration = tObj.optInt("duration", 210)
+                        val trackPos = tObj.optInt("track_position", i + 1)
+                        val previewUrl = tObj.optString("preview")
 
-                        val album = Album(
-                            id = id,
-                            title = title,
-                            artist = artistName,
-                            year = year,
-                            coverUrl = coverUrl,
-                            qualitySummary = "Lossless · Soulseek Available"
-                        )
-                        apiAlbums.add(album)
-                        apiTracks.add(
+                        tracks.add(
                             Track(
-                                id = "track-$id-1",
-                                title = title,
+                                id = "dz-tr-$tId",
+                                title = tTitle,
                                 artist = artistName,
                                 album = title,
-                                albumId = id,
-                                durationSec = 210,
+                                albumId = albumId,
+                                durationSec = duration,
+                                trackNumber = trackPos,
                                 coverUrl = coverUrl,
-                                qualityBadge = "FLAC"
+                                genre = genre,
+                                year = year,
+                                qualityBadge = "FLAC 24-bit",
+                                streamUrl = previewUrl
                             )
                         )
                     }
                 }
-                return@withContext CatalogSearchResult(
-                    query = query,
-                    topResult = apiAlbums.firstOrNull(),
-                    tracks = apiTracks,
-                    albums = apiAlbums
+
+                val fullAlbum = Album(
+                    id = albumId,
+                    title = title,
+                    artist = artistName,
+                    artistId = "dz-art-$artistId",
+                    coverUrl = coverUrl,
+                    year = year,
+                    genre = genre,
+                    trackCount = tracks.size,
+                    tracks = tracks,
+                    qualitySummary = "FLAC Lossless · Soulseek Verified"
                 )
+                albumCache[albumId] = fullAlbum
+                return@withContext fullAlbum
             }
         } catch (e: Exception) {
-            Log.w("SonoraMusicBrainz", "Live MusicBrainz search error: ${e.message}")
+            Log.e("SonoraCatalog", "Error fetching album $albumId: ${e.message}")
         }
 
-        // Fallback result matching query
-        val fallbackTrack = Track(
-            id = "custom-${System.currentTimeMillis()}",
-            title = query.replaceFirstChar { it.uppercase() },
-            artist = "Soulseek Source",
-            album = "Sonora Stream",
-            durationSec = 224,
-            qualityBadge = "FLAC"
-        )
+        albumCache[albumId]
+    }
+
+    override suspend fun getArtistDetails(artistId: String): Artist? = withContext(Dispatchers.IO) {
+        artistCache[artistId]?.let { cached ->
+            if (cached.topTracks.isNotEmpty()) return@withContext cached
+        }
+
+        val cleanId = artistId.removePrefix("dz-art-")
+        try {
+            val url = "https://api.deezer.com/artist/$cleanId"
+            val req = Request.Builder().url(url).build()
+            val res = httpClient.newCall(req).execute()
+            if (res.isSuccessful) {
+                val json = JSONObject(res.body?.string().orEmpty())
+                val name = json.optString("name")
+                val pictureUrl = json.optString("picture_xl", json.optString("picture_big", ""))
+                val fans = json.optInt("nb_fan", 1_000_000)
+                val formattedFans = if (fans >= 1_000_000) String.format("%.1fM", fans / 1_000_000.0) else "${fans / 1000}K"
+
+                // Fetch top tracks
+                val topTracks = mutableListOf<Track>()
+                try {
+                    val tracksRes = httpClient.newCall(Request.Builder().url("https://api.deezer.com/artist/$cleanId/top?limit=15").build()).execute()
+                    if (tracksRes.isSuccessful) {
+                        val tArray = JSONObject(tracksRes.body?.string().orEmpty()).optJSONArray("data")
+                        if (tArray != null) {
+                            for (i in 0 until tArray.length()) {
+                                val tObj = tArray.getJSONObject(i)
+                                val albObj = tObj.optJSONObject("album")
+                                topTracks.add(
+                                    Track(
+                                        id = "dz-tr-${tObj.optString("id")}",
+                                        title = tObj.optString("title"),
+                                        artist = name,
+                                        album = albObj?.optString("title", "Album") ?: "Album",
+                                        albumId = "dz-album-${albObj?.optString("id")}",
+                                        durationSec = tObj.optInt("duration", 210),
+                                        trackNumber = i + 1,
+                                        coverUrl = albObj?.optString("cover_big", pictureUrl),
+                                        qualityBadge = "FLAC",
+                                        streamUrl = tObj.optString("preview")
+                                    )
+                                )
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+
+                val artist = Artist(
+                    id = artistId,
+                    name = name,
+                    imageUrl = pictureUrl,
+                    bio = "$name on the global charts with $formattedFans fans.",
+                    monthlyListeners = formattedFans,
+                    topTracks = topTracks
+                )
+                artistCache[artistId] = artist
+                return@withContext artist
+            }
+        } catch (e: Exception) {
+            Log.e("SonoraCatalog", "Error fetching artist $artistId: ${e.message}")
+        }
+
+        artistCache[artistId]
+    }
+
+    override suspend fun searchCatalog(query: String): CatalogSearchResult = withContext(Dispatchers.IO) {
+        val q = query.trim()
+        if (q.isEmpty()) return@withContext CatalogSearchResult(query = query)
+
+        val foundTracks = mutableListOf<Track>()
+        val foundAlbums = mutableListOf<Album>()
+        val foundArtists = mutableListOf<Artist>()
+
+        // 1. Live Deezer track search
+        try {
+            val encoded = URLEncoder.encode(q, "UTF-8")
+            val url = "https://api.deezer.com/search?q=$encoded&limit=20"
+            val req = Request.Builder().url(url).build()
+            val res = httpClient.newCall(req).execute()
+            if (res.isSuccessful) {
+                val data = JSONObject(res.body?.string().orEmpty()).optJSONArray("data")
+                if (data != null) {
+                    for (i in 0 until data.length()) {
+                        val t = data.getJSONObject(i)
+                        val artistObj = t.optJSONObject("artist")
+                        val albumObj = t.optJSONObject("album")
+                        val track = Track(
+                            id = "dz-tr-${t.optString("id")}",
+                            title = t.optString("title"),
+                            artist = artistObj?.optString("name", "Unknown Artist") ?: "Unknown Artist",
+                            album = albumObj?.optString("title", "Album") ?: "Album",
+                            albumId = "dz-album-${albumObj?.optString("id", "")}",
+                            durationSec = t.optInt("duration", 210),
+                            trackNumber = i + 1,
+                            coverUrl = albumObj?.optString("cover_big", ""),
+                            qualityBadge = "FLAC",
+                            streamUrl = t.optString("preview")
+                        )
+                        foundTracks.add(track)
+
+                        // Album reference
+                        albumObj?.let { a ->
+                            val aId = "dz-album-${a.optString("id")}"
+                            if (foundAlbums.none { it.id == aId }) {
+                                val alb = Album(
+                                    id = aId,
+                                    title = a.optString("title"),
+                                    artist = track.artist,
+                                    artistId = "dz-art-${artistObj?.optString("id")}",
+                                    coverUrl = a.optString("cover_big"),
+                                    qualitySummary = "FLAC Lossless"
+                                )
+                                foundAlbums.add(alb)
+                                albumCache[aId] = alb
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("SonoraSearch", "Deezer search error: ${e.message}")
+        }
+
+        // 2. Live Deezer artist search
+        try {
+            val encoded = URLEncoder.encode(q, "UTF-8")
+            val url = "https://api.deezer.com/search/artist?q=$encoded&limit=6"
+            val req = Request.Builder().url(url).build()
+            val res = httpClient.newCall(req).execute()
+            if (res.isSuccessful) {
+                val data = JSONObject(res.body?.string().orEmpty()).optJSONArray("data")
+                if (data != null) {
+                    for (i in 0 until data.length()) {
+                        val a = data.getJSONObject(i)
+                        val artist = Artist(
+                            id = "dz-art-${a.optString("id")}",
+                            name = a.optString("name"),
+                            imageUrl = a.optString("picture_big"),
+                            monthlyListeners = "${a.optInt("nb_fan", 1000) / 1000}K"
+                        )
+                        foundArtists.add(artist)
+                        artistCache[artist.id] = artist
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
         CatalogSearchResult(
             query = query,
-            topResult = fallbackTrack,
-            tracks = listOf(fallbackTrack)
+            topResult = foundTracks.firstOrNull() ?: foundAlbums.firstOrNull() ?: foundArtists.firstOrNull(),
+            tracks = foundTracks,
+            albums = foundAlbums,
+            artists = foundArtists
         )
     }
 
     override suspend fun getSyncedLyrics(track: Track): List<LyricLine> = withContext(Dispatchers.IO) {
-        // Try LRCLIB API first: https://lrclib.net/api/get
         try {
-            val encodedArtist = java.net.URLEncoder.encode(track.artist, "UTF-8")
-            val encodedTitle = java.net.URLEncoder.encode(track.title, "UTF-8")
+            val encodedArtist = URLEncoder.encode(track.artist, "UTF-8")
+            val encodedTitle = URLEncoder.encode(track.title, "UTF-8")
             val url = "https://lrclib.net/api/get?artist_name=$encodedArtist&track_name=$encodedTitle"
             val request = Request.Builder().url(url).build()
             val response = httpClient.newCall(request).execute()
             if (response.isSuccessful) {
-                val body = response.body?.string().orEmpty()
-                val json = JSONObject(body)
+                val json = JSONObject(response.body?.string().orEmpty())
                 val syncedLyrics = json.optString("syncedLyrics")
                 if (syncedLyrics.isNotEmpty()) {
                     val parsed = parseLrc(syncedLyrics)
@@ -356,8 +430,72 @@ class MusicBrainzCatalogProvider : CatalogProvider {
             Log.d("SonoraLyrics", "LRCLIB fetch error: ${e.message}")
         }
 
-        // Generate context-aware synced lyrics for popular songs
         generateSongLyrics(track)
+    }
+
+    private fun fetchLiveChartAlbums(limit: Int): List<Album> {
+        try {
+            val url = "https://api.deezer.com/chart/0/albums?limit=$limit"
+            val req = Request.Builder().url(url).build()
+            val res = httpClient.newCall(req).execute()
+            if (res.isSuccessful) {
+                val data = JSONObject(res.body?.string().orEmpty()).optJSONArray("data")
+                if (data != null) {
+                    val list = mutableListOf<Album>()
+                    for (i in 0 until data.length()) {
+                        val a = data.getJSONObject(i)
+                        val artistObj = a.optJSONObject("artist")
+                        val id = "dz-album-${a.optString("id")}"
+                        val coverUrl = a.optString("cover_xl", a.optString("cover_big", ""))
+                        val album = Album(
+                            id = id,
+                            title = a.optString("title"),
+                            artist = artistObj?.optString("name", "Artist") ?: "Artist",
+                            artistId = "dz-art-${artistObj?.optString("id")}",
+                            coverUrl = coverUrl,
+                            year = 2024,
+                            genre = "Global Chart Top",
+                            trackCount = 10,
+                            qualitySummary = "FLAC 24-bit · Soulseek Swarm"
+                        )
+                        list.add(album)
+                    }
+                    if (list.isNotEmpty()) return list
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("SonoraCatalog", "Failed to fetch live chart albums: ${e.message}")
+        }
+        return emptyList()
+    }
+
+    private fun fetchLiveChartArtists(limit: Int): List<Artist> {
+        try {
+            val url = "https://api.deezer.com/chart/0/artists?limit=$limit"
+            val req = Request.Builder().url(url).build()
+            val res = httpClient.newCall(req).execute()
+            if (res.isSuccessful) {
+                val data = JSONObject(res.body?.string().orEmpty()).optJSONArray("data")
+                if (data != null) {
+                    val list = mutableListOf<Artist>()
+                    for (i in 0 until data.length()) {
+                        val a = data.getJSONObject(i)
+                        val fans = a.optInt("nb_fan", 1_000_000)
+                        val artist = Artist(
+                            id = "dz-art-${a.optString("id")}",
+                            name = a.optString("name"),
+                            imageUrl = a.optString("picture_xl", a.optString("picture_big", "")),
+                            monthlyListeners = if (fans >= 1_000_000) String.format("%.1fM", fans / 1_000_000.0) else "${fans / 1000}K"
+                        )
+                        list.add(artist)
+                    }
+                    if (list.isNotEmpty()) return list
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("SonoraCatalog", "Failed to fetch live chart artists: ${e.message}")
+        }
+        return emptyList()
     }
 
     private fun parseLrc(lrcText: String): List<LyricLine> {
@@ -378,93 +516,17 @@ class MusicBrainzCatalogProvider : CatalogProvider {
     }
 
     private fun generateSongLyrics(track: Track): List<LyricLine> {
-        // High quality synchronized lyric lines matching song duration
-        val baseLines = when (track.title.lowercase()) {
-            "paranoid android" -> listOf(
-                "Please could you stop the noise?",
-                "I'm trying to get some rest",
-                "From all the unborn chicken voices in my head",
-                "What's that?",
-                "I may be paranoid, but not an android",
-                "When I am king, you will be first against the wall",
-                "With your opinion which is of no consequence at all",
-                "Ambition makes you look that ugly",
-                "Kicking, squealing, Gucci little piggy",
-                "Rain down, rain down",
-                "Come on, rain down on me",
-                "From a great height",
-                "That's it, sir, you're leaving",
-                "The crackle of pigskin",
-                "The dust and the screaming",
-                "The panic, the vomit",
-                "God loves his children, God loves his children, yeah"
-            )
-            "karma police" -> listOf(
-                "Karma police, arrest this man",
-                "He talks in maths",
-                "He buzzes like a fridge",
-                "He's like a detuned radio",
-                "Karma police, arrest this girl",
-                "Her Hitler hairdo is making me feel ill",
-                "And we have crashed her party",
-                "This is what you'll get",
-                "This is what you'll get when you mess with us",
-                "For a minute there, I lost myself, I lost myself",
-                "Phew, for a minute there, I lost myself, I lost myself"
-            )
-            "instant crush (feat. julian casablancas)" -> listOf(
-                "I didn't want to be the one to forget",
-                "I thought of everything I'd never regret",
-                "A little time with you is all that I get",
-                "That's all we need because it's all we can take",
-                "One hurt follows another",
-                "And now we're under the cover",
-                "And we will never be together again",
-                "Now we're back in the game"
-            )
-            "get lucky (feat. pharrell williams)" -> listOf(
-                "Like the legend of the phoenix",
-                "All ends with beginnings",
-                "What keeps the planet spinning",
-                "The force from the beginning",
-                "We've come too far to give up who we are",
-                "So let's raise the bar and our cups to the stars",
-                "She's up all night 'til the sun",
-                "I'm up all night to get some",
-                "She's up all night for good fun",
-                "I'm up all night to get lucky"
-            )
-            "the less i know the better" -> listOf(
-                "Someone said they left together",
-                "I ran out the door to get her",
-                "She was holding hands with Trevor",
-                "Not the greatest feeling ever",
-                "Said, \"Pull yourself together",
-                "You should try your luck with Heather\"",
-                "Man, I hope they're not together",
-                "Oh, the less I know the better"
-            )
-            else -> listOf(
-                "♪ [Instrumental opening] ♪",
-                "Look into the distant horizon",
-                "Echoes dancing through the digital night",
-                "Stream begins, bit by bit arriving",
-                "Frequencies of acoustic light",
-                "Lost in the soundscape",
-                "Feel the cadence taking hold",
-                "Every note in pure fidelity",
-                "A story waiting to be told",
-                "♪ [Interlude / Melodic groove] ♪",
-                "Rising with the gentle rhythm",
-                "Held within the sanctuary of song",
-                "Soulseek peers across the world",
-                "Connecting where we belong"
-            )
-        }
-
-        val step = ((track.durationSec * 1000L) / (baseLines.size + 1)).coerceAtLeast(3500L)
-        return baseLines.mapIndexed { idx, text ->
-            LyricLine(timestampMs = 2000L + idx * step, text = text)
-        }
+        val lines = listOf(
+            "♪ [Intro - Sonora Audio Stream] ♪",
+            "Streaming directly from decentralized peers",
+            "Frequencies resonating through the night",
+            "Feel the groove take hold",
+            "Lossless fidelity in every bar",
+            "♪ [Melodic bridge] ♪",
+            "Connected across the Soulseek network",
+            "Music without borders"
+        )
+        val step = 4000L
+        return lines.mapIndexed { i, txt -> LyricLine(timestampMs = 1500L + i * step, text = txt) }
     }
 }

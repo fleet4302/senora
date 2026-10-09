@@ -94,6 +94,7 @@ fun SonoraMainApp(viewModel: SonoraViewModel) {
 
     val currentTrackSources by viewModel.currentTrackSources.collectAsState()
     val isResolvingSources by viewModel.isResolvingSources.collectAsState()
+    val soulseekStatus by viewModel.soulseekStatus.collectAsState()
 
     // Back handler for screen navigation stack
     BackHandler(enabled = !isPlayerExpanded && currentScreen !is ScreenDestination.Tab) {
@@ -230,6 +231,7 @@ fun SonoraMainApp(viewModel: SonoraViewModel) {
                                     val albums by viewModel.listenNowAlbums.collectAsState()
                                     ListenNowScreen(
                                         albums = albums,
+                                        soulseekStatus = soulseekStatus,
                                         onAlbumClick = { viewModel.navigateTo(ScreenDestination.AlbumDetails(it)) },
                                         onOpenSettings = { viewModel.navigateTo(ScreenDestination.Settings) }
                                     )
@@ -340,6 +342,8 @@ fun SonoraMainApp(viewModel: SonoraViewModel) {
                         is ScreenDestination.Settings -> {
                             SettingsScreen(
                                 settings = viewModel.settings,
+                                soulseekStatus = soulseekStatus,
+                                onTestConnection = { viewModel.testSoulseekConnection() },
                                 onBackClick = { viewModel.navigateBack() }
                             )
                         }

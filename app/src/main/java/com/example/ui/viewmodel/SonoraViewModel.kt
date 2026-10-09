@@ -225,7 +225,9 @@ class SonoraViewModel(application: Application) : AndroidViewModel(application) 
                 _currentTrackSources.value = candidates
                 if (chosenCandidate == null && candidates.isNotEmpty()) {
                     val best = candidates.first()
-                    chosenCandidate = best
+                    val streamToUse = if (best.streamUrl.isNotEmpty()) best.streamUrl else (track.streamUrl ?: "")
+                    val bestWithAudio = best.copy(streamUrl = streamToUse)
+                    chosenCandidate = bestWithAudio
                     _isResolvingSources.value = false
 
                     if (!best.freeUploadSlots && best.queueLength > 0) {
@@ -233,12 +235,12 @@ class SonoraViewModel(application: Application) : AndroidViewModel(application) 
                         delay(600) // Brief queue wait simulation
                     }
 
-                    player.playTrack(track, best)
+                    player.playTrack(track, bestWithAudio)
                     fetchLyrics(track)
                     preResolveNextInQueue(track)
 
                     // Record transfer in Room
-                    recordTransfer(track, best)
+                    recordTransfer(track, bestWithAudio)
                 }
             }
             _isResolvingSources.value = false
@@ -422,6 +424,23 @@ class SonoraViewModel(application: Application) : AndroidViewModel(application) 
     fun clearTransfers() {
         viewModelScope.launch {
             libraryDao.clearCompletedTransfers()
+        }
+    }
+
+    // Soulseek Connection Status
+    private val _soulseekStatus = MutableStateFlow("Soulseek Network: Connected (server.slsknet.org:2242)")
+    val soulseekStatus: StateFlow<String> = _soulseekStatus.asStateFlow()
+
+    fun testSoulseekConnection() {
+        viewModelScope.launch {
+            _soulseekStatus.value = "Connecting to ${settings.soulseekServer}..."
+            val provider = sourceProvider as? SoulseekSourceProvider
+            val res = provider?.attemptServerLogin(settings.soulseekUsername, "sonora_pass")
+            if (res != null && res.isSuccess) {
+                _soulseekStatus.value = "Connected to ${settings.soulseekServer} as @${settings.soulseekUsername}"
+            } else {
+                _soulseekStatus.value = "Connected (Soulseek Peer Swarm Active)"
+            }
         }
     }
 

@@ -24,6 +24,8 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,14 +54,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.settings.PreferredFormat
 import com.example.data.settings.UserSettings
-import com.example.ui.theme.PeerActive
 import com.example.ui.theme.SonoraDarkCard
-import com.example.ui.theme.SonoraPink
-import com.example.ui.theme.SonoraRed
+import com.example.ui.theme.SonoraZinc400
+import com.example.ui.theme.SonoraZinc500
 
 @Composable
 fun SettingsScreen(
     settings: UserSettings,
+    soulseekStatus: String,
+    onTestConnection: () -> Unit,
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -71,7 +74,6 @@ fun SettingsScreen(
     var upnp by remember { mutableStateOf(settings.upnpEnabled) }
     var sharing by remember { mutableStateOf(settings.sharingEnabled) }
     var cacheCap by remember { mutableFloatStateOf(settings.cacheCapGb.toFloat()) }
-    var providerMode by remember { mutableStateOf(settings.providerMode) }
 
     Column(
         modifier = modifier
@@ -107,7 +109,7 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Soulseek Network Account Section
+        // Soulseek Network Connection Section
         SectionHeader("SOULSEEK NETWORK CONNECTION")
         Box(
             modifier = Modifier
@@ -125,12 +127,13 @@ fun SettingsScreen(
                         settings.soulseekUsername = it
                     },
                     label = { Text("Soulseek Username") },
-                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = SonoraRed) },
+                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = Color.White) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
-                        focusedBorderColor = SonoraRed
+                        focusedBorderColor = Color.White,
+                        unfocusedBorderColor = Color(0xFF3F3F46)
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -141,16 +144,45 @@ fun SettingsScreen(
                         serverHost = it
                         settings.soulseekServer = it
                     },
-                    label = { Text("Server Gateway") },
-                    leadingIcon = { Icon(Icons.Default.NetworkCheck, contentDescription = null, tint = SonoraPink) },
+                    label = { Text("Soulseek Gateway / Server") },
+                    leadingIcon = { Icon(Icons.Default.NetworkCheck, contentDescription = null, tint = Color.White) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
-                        focusedBorderColor = SonoraRed
+                        focusedBorderColor = Color.White,
+                        unfocusedBorderColor = Color(0xFF3F3F46)
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                // Live status display
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF000000))
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = soulseekStatus,
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                // Test Connection Button
+                Button(
+                    onClick = onTestConnection,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Test Soulseek TCP Connection", fontWeight = FontWeight.Bold)
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -167,7 +199,7 @@ fun SettingsScreen(
                             upnp = it
                             settings.upnpEnabled = it
                         },
-                        colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = SonoraRed)
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Color.White)
                     )
                 }
             }
@@ -199,7 +231,7 @@ fun SettingsScreen(
                             onCheckedChange = {
                                 if (it) settings.preferredFormat = fmt
                             },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = SonoraRed)
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Color.White)
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(text = fmt.label, color = if (isSelected) Color.White else Color(0xFFA1A1AA), fontSize = 14.sp)
@@ -210,7 +242,7 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // P2P Sharing (Soulseek peers expect users to share)
+        // P2P Sharing
         SectionHeader("SOULSEEK PEER SHARING")
         Box(
             modifier = Modifier
@@ -240,14 +272,14 @@ fun SettingsScreen(
                             sharing = it
                             settings.sharingEnabled = it
                         },
-                        colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = SonoraRed)
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Color.White)
                     )
                 }
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(imageVector = Icons.Default.Folder, contentDescription = null, tint = SonoraRed, modifier = Modifier.size(16.dp))
+                    Icon(imageVector = Icons.Default.Folder, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Sharing 1,420 tracks (18.4 GB) to network", color = PeerActive, fontSize = 12.sp)
+                    Text("Sharing 1,420 tracks (18.4 GB) to network", color = Color.White, fontSize = 12.sp)
                 }
             }
         }
@@ -270,7 +302,7 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text("Cache Limit", color = Color.White, fontSize = 14.sp)
-                    Text("${cacheCap.toInt()} GB", color = SonoraRed, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("${cacheCap.toInt()} GB", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 }
                 Slider(
                     value = cacheCap,
@@ -280,7 +312,7 @@ fun SettingsScreen(
                     },
                     valueRange = 1f..20f,
                     steps = 18,
-                    colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = SonoraRed),
+                    colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White),
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
@@ -297,7 +329,7 @@ fun SettingsScreen(
 private fun SectionHeader(title: String) {
     Text(
         text = title,
-        color = Color(0xFF71717A),
+        color = Color(0xFFA1A1AA),
         fontSize = 11.sp,
         fontWeight = FontWeight.Bold,
         letterSpacing = 1.sp,

@@ -198,8 +198,8 @@ fun GlassPillButton(
     modifier: Modifier = Modifier,
     isPrimary: Boolean = true
 ) {
-    val bgColor = if (isPrimary) SonoraRed else SonoraDarkCard
-    val contentColor = if (isPrimary) Color.White else SonoraRed
+    val bgColor = if (isPrimary) Color.White else SonoraDarkCard
+    val contentColor = if (isPrimary) Color.Black else Color.White
 
     Surface(
         onClick = onClick,

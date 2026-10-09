@@ -1,34 +1,34 @@
 package com.example.data.source
 
+import android.util.Log
 import com.example.data.model.AudioFormat
 import com.example.data.model.SoulseekPeerSource
 import com.example.data.model.Track
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
+import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
 
-class SimulatedSoulseekProvider : SourceProvider {
+class SimulatedSoulseekProvider(
+    private val httpClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
+        .build()
+) : SourceProvider {
 
-    // Authentic community peers on the Soulseek network
     private val peerProfiles = listOf(
-        PeerProfile("flac_hoarder_99", 3450, true, 0, "DE", AudioFormat.FLAC, 24, 96000),
+        PeerProfile("flac_hoarder_99", 4200, true, 0, "DE", AudioFormat.FLAC, 24, 96000),
         PeerProfile("vocaloid_queen", 4800, true, 0, "JP", AudioFormat.FLAC, 24, 88200),
-        PeerProfile("lossless_vault_eu", 2100, true, 0, "NL", AudioFormat.FLAC, 16, 44100),
-        PeerProfile("underground_tapes", 1450, false, 2, "UK", AudioFormat.MP3_320, 16, 44100),
-        PeerProfile("analog_archivist", 5200, true, 0, "US", AudioFormat.FLAC, 24, 192000),
-        PeerProfile("retro_discography", 850, false, 4, "SE", AudioFormat.MP3_V0, 16, 44100),
-        PeerProfile("audiophile_japan", 3800, true, 0, "JP", AudioFormat.FLAC, 16, 44100),
-        PeerProfile("tape_trader_84", 920, true, 0, "CA", AudioFormat.MP3_256, 16, 44100)
-    )
-
-    // Audio stream URLs for real audio playback in Android
-    private val playableAudioUrls = listOf(
-        "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
-        "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
-        "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
-        "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
-        "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3",
-        "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3"
+        PeerProfile("lossless_vault_eu", 3100, true, 0, "NL", AudioFormat.FLAC, 16, 44100),
+        PeerProfile("underground_tapes", 1850, false, 2, "UK", AudioFormat.MP3_320, 16, 44100),
+        PeerProfile("analog_archivist", 5400, true, 0, "US", AudioFormat.FLAC, 24, 192000),
+        PeerProfile("retro_discography", 950, false, 3, "SE", AudioFormat.MP3_V0, 16, 44100)
     )
 
     private data class PeerProfile(
@@ -43,12 +43,14 @@ class SimulatedSoulseekProvider : SourceProvider {
     )
 
     override fun resolveCandidates(track: Track): Flow<List<SoulseekPeerSource>> = flow {
+        // Resolve the real audio stream for this exact song
+        val realSongAudioUrl = track.streamUrl ?: fetchSongAudioUrl(track.artist, track.title)
         val candidates = mutableListOf<SoulseekPeerSource>()
         val baseFilename = "%02d - %s - %s".format(track.trackNumber, track.artist, track.title)
         val sanitizedBase = PeerSanitizer.sanitizeFilename(baseFilename)
 
-        // Wave 1: Immediate fast peers responding in ~1 second
-        delay(700)
+        // Wave 1: Immediate fast peers responding in ~500ms
+        delay(400)
         candidates.add(
             SoulseekPeerSource(
                 peerUsername = peerProfiles[0].username,
@@ -64,7 +66,7 @@ class SimulatedSoulseekProvider : SourceProvider {
                 queueLength = 0,
                 uploadSpeedKbps = peerProfiles[0].speedKbps,
                 country = peerProfiles[0].country,
-                streamUrl = playableAudioUrls[0],
+                streamUrl = realSongAudioUrl,
                 isCompleteAlbumFolder = true
             )
         )
@@ -80,17 +82,17 @@ class SimulatedSoulseekProvider : SourceProvider {
                 bitDepth = 16,
                 durationSec = track.durationSec + 1,
                 freeUploadSlots = false,
-                queueLength = 2,
+                queueLength = 1,
                 uploadSpeedKbps = peerProfiles[3].speedKbps,
                 country = peerProfiles[3].country,
-                streamUrl = playableAudioUrls[1],
+                streamUrl = realSongAudioUrl,
                 isCompleteAlbumFolder = false
             )
         )
         emit(candidates.toList())
 
-        // Wave 2: Results trickling in over ~2.5 seconds
-        delay(1500)
+        // Wave 2: Results trickling in
+        delay(800)
         candidates.add(
             SoulseekPeerSource(
                 peerUsername = peerProfiles[1].username,
@@ -106,33 +108,14 @@ class SimulatedSoulseekProvider : SourceProvider {
                 queueLength = 0,
                 uploadSpeedKbps = peerProfiles[1].speedKbps,
                 country = peerProfiles[1].country,
-                streamUrl = playableAudioUrls[2],
+                streamUrl = realSongAudioUrl,
                 isCompleteAlbumFolder = true
-            )
-        )
-        candidates.add(
-            SoulseekPeerSource(
-                peerUsername = peerProfiles[5].username,
-                filename = "$sanitizedBase.mp3",
-                folder = "Incoming/${track.artist} - ${track.title}",
-                sizeBytes = 7_800_000L,
-                bitrate = 245,
-                format = AudioFormat.MP3_V0,
-                sampleRate = 44100,
-                bitDepth = 16,
-                durationSec = track.durationSec - 2,
-                freeUploadSlots = false,
-                queueLength = 3,
-                uploadSpeedKbps = peerProfiles[5].speedKbps,
-                country = peerProfiles[5].country,
-                streamUrl = playableAudioUrls[3],
-                isCompleteAlbumFolder = false
             )
         )
         emit(candidates.toList())
 
-        // Wave 3: Final sweep at ~4.5 seconds budget
-        delay(1800)
+        // Wave 3: Final sweep
+        delay(900)
         candidates.add(
             SoulseekPeerSource(
                 peerUsername = peerProfiles[2].username,
@@ -148,26 +131,7 @@ class SimulatedSoulseekProvider : SourceProvider {
                 queueLength = 0,
                 uploadSpeedKbps = peerProfiles[2].speedKbps,
                 country = peerProfiles[2].country,
-                streamUrl = playableAudioUrls[4],
-                isCompleteAlbumFolder = true
-            )
-        )
-        candidates.add(
-            SoulseekPeerSource(
-                peerUsername = peerProfiles[6].username,
-                filename = "$sanitizedBase.flac",
-                folder = "Rips/${track.artist}/${track.album} [TOC AccurateRip]",
-                sizeBytes = 39_100_000L,
-                bitrate = 1411,
-                format = AudioFormat.FLAC,
-                sampleRate = 44100,
-                bitDepth = 16,
-                durationSec = track.durationSec,
-                freeUploadSlots = true,
-                queueLength = 0,
-                uploadSpeedKbps = peerProfiles[6].speedKbps,
-                country = peerProfiles[6].country,
-                streamUrl = playableAudioUrls[5],
+                streamUrl = realSongAudioUrl,
                 isCompleteAlbumFolder = true
             )
         )
@@ -175,7 +139,7 @@ class SimulatedSoulseekProvider : SourceProvider {
     }
 
     override fun resolveAlbumCandidates(albumTitle: String, artist: String, trackCount: Int): Flow<List<SoulseekPeerSource>> = flow {
-        delay(900)
+        delay(600)
         val albumCandidates = listOf(
             SoulseekPeerSource(
                 peerUsername = "flac_hoarder_99",
@@ -189,9 +153,8 @@ class SimulatedSoulseekProvider : SourceProvider {
                 durationSec = trackCount * 220,
                 freeUploadSlots = true,
                 queueLength = 0,
-                uploadSpeedKbps = 3450,
+                uploadSpeedKbps = 4200,
                 country = "DE",
-                streamUrl = playableAudioUrls[0],
                 isCompleteAlbumFolder = true
             ),
             SoulseekPeerSource(
@@ -208,24 +171,6 @@ class SimulatedSoulseekProvider : SourceProvider {
                 queueLength = 0,
                 uploadSpeedKbps = 4800,
                 country = "JP",
-                streamUrl = playableAudioUrls[1],
-                isCompleteAlbumFolder = true
-            ),
-            SoulseekPeerSource(
-                peerUsername = "underground_tapes",
-                filename = "$artist - $albumTitle [320kbps MP3]",
-                folder = "Shares/$artist/$albumTitle",
-                sizeBytes = 145_000_000L,
-                bitrate = 320,
-                format = AudioFormat.MP3_320,
-                sampleRate = 44100,
-                bitDepth = 16,
-                durationSec = trackCount * 220,
-                freeUploadSlots = false,
-                queueLength = 1,
-                uploadSpeedKbps = 1450,
-                country = "UK",
-                streamUrl = playableAudioUrls[2],
                 isCompleteAlbumFolder = true
             )
         )
@@ -236,20 +181,18 @@ class SimulatedSoulseekProvider : SourceProvider {
         query: String,
         filterFormat: String?,
         freeSlotsOnly: Boolean
-    ): List<SoulseekPeerSource> {
-        delay(600)
-        val q = query.trim().lowercase()
+    ): List<SoulseekPeerSource> = withContext(Dispatchers.IO) {
+        val q = query.trim()
+        val realUrl = fetchSongAudioUrl("", q)
         val results = mutableListOf<SoulseekPeerSource>()
 
         val peerPool = listOf(
-            Triple("flac_hoarder_99", AudioFormat.FLAC, 3450),
+            Triple("flac_hoarder_99", AudioFormat.FLAC, 4200),
             Triple("vocaloid_queen", AudioFormat.FLAC, 4800),
-            Triple("lossless_vault_eu", AudioFormat.FLAC, 2100),
-            Triple("underground_tapes", AudioFormat.MP3_320, 1450),
-            Triple("analog_archivist", AudioFormat.FLAC, 5200),
-            Triple("retro_discography", AudioFormat.MP3_V0, 850),
-            Triple("techno_bunker_berlin", AudioFormat.FLAC, 4100),
-            Triple("indie_cassette_club", AudioFormat.MP3_320, 1200)
+            Triple("lossless_vault_eu", AudioFormat.FLAC, 3100),
+            Triple("underground_tapes", AudioFormat.MP3_320, 1850),
+            Triple("analog_archivist", AudioFormat.FLAC, 5400),
+            Triple("retro_discography", AudioFormat.MP3_V0, 950)
         )
 
         for ((idx, peer) in peerPool.withIndex()) {
@@ -262,24 +205,24 @@ class SimulatedSoulseekProvider : SourceProvider {
             results.add(
                 SoulseekPeerSource(
                     peerUsername = peer.first,
-                    filename = PeerSanitizer.sanitizeFilename("$query - Track ${idx + 1}.$ext"),
-                    folder = "Shared/$query Collection/Disc ${idx % 2 + 1}",
+                    filename = PeerSanitizer.sanitizeFilename("$q - Master Track ${idx + 1}.$ext"),
+                    folder = "Shared/$q Collection/Disc ${idx % 2 + 1}",
                     sizeBytes = if (format == AudioFormat.FLAC) 42_000_000L else 9_500_000L,
                     bitrate = bitrate,
                     format = format,
                     sampleRate = sampleRate,
                     bitDepth = bitDepth,
-                    durationSec = 195 + idx * 15,
+                    durationSec = 210,
                     freeUploadSlots = idx % 3 != 0,
-                    queueLength = if (idx % 3 == 0) (idx % 4) + 1 else 0,
+                    queueLength = if (idx % 3 == 0) 1 else 0,
                     uploadSpeedKbps = peer.third,
                     country = if (idx % 2 == 0) "DE" else "US",
-                    streamUrl = playableAudioUrls[idx % playableAudioUrls.size]
+                    streamUrl = realUrl
                 )
             )
         }
 
-        return results.filter { source ->
+        results.filter { source ->
             if (freeSlotsOnly && !source.freeUploadSlots) return@filter false
             if (filterFormat != null && filterFormat != "All") {
                 if (!source.format.displayName.contains(filterFormat, ignoreCase = true)) return@filter false
@@ -288,70 +231,74 @@ class SimulatedSoulseekProvider : SourceProvider {
         }
     }
 
-    override suspend fun browsePeerShares(peerUsername: String): List<SoulseekPeerSource> {
-        delay(500)
+    override suspend fun browsePeerShares(peerUsername: String): List<SoulseekPeerSource> = withContext(Dispatchers.IO) {
         val cleanUser = PeerSanitizer.sanitizeUsername(peerUsername)
-        return listOf(
+        listOf(
             SoulseekPeerSource(
                 peerUsername = cleanUser,
-                filename = "01 - Radiohead - Airbag.flac",
-                folder = "Music/Radiohead/OK Computer [FLAC]",
+                filename = "01 - Daft Punk - One More Time.flac",
+                folder = "Music/Daft Punk/Discovery [FLAC 16-44]",
                 sizeBytes = 46_000_000L,
+                bitrate = 1411,
+                format = AudioFormat.FLAC,
+                sampleRate = 44100,
+                bitDepth = 16,
+                durationSec = 320,
+                freeUploadSlots = true,
+                uploadSpeedKbps = 4200,
+                streamUrl = "https://cdnt-preview.dzcdn.net/api/1/1/f/b/5/fb5f8b9ecf80fc57df84483bba7ca878.mp3"
+            ),
+            SoulseekPeerSource(
+                peerUsername = cleanUser,
+                filename = "02 - Radiohead - Airbag.flac",
+                folder = "Music/Radiohead/OK Computer [24-96]",
+                sizeBytes = 62_000_000L,
                 bitrate = 1411,
                 format = AudioFormat.FLAC,
                 sampleRate = 96000,
                 bitDepth = 24,
                 durationSec = 284,
                 freeUploadSlots = true,
-                uploadSpeedKbps = 3200,
-                streamUrl = playableAudioUrls[0]
+                uploadSpeedKbps = 4200,
+                streamUrl = "https://cdnt-preview.dzcdn.net/api/1/1/a/2/b/a2bfa54c59a58bb0e0ffb471cb736ea2.mp3"
             ),
             SoulseekPeerSource(
                 peerUsername = cleanUser,
-                filename = "02 - Radiohead - Paranoid Android.flac",
-                folder = "Music/Radiohead/OK Computer [FLAC]",
-                sizeBytes = 62_000_000L,
-                bitrate = 1411,
-                format = AudioFormat.FLAC,
-                sampleRate = 96000,
-                bitDepth = 24,
-                durationSec = 383,
-                freeUploadSlots = true,
-                uploadSpeedKbps = 3200,
-                streamUrl = playableAudioUrls[1]
-            ),
-            SoulseekPeerSource(
-                peerUsername = cleanUser,
-                filename = "03 - Daft Punk - Giorgio by Moroder.flac",
-                folder = "Music/Daft Punk/Random Access Memories",
-                sizeBytes = 78_000_000L,
-                bitrate = 1411,
-                format = AudioFormat.FLAC,
-                sampleRate = 88200,
-                bitDepth = 24,
-                durationSec = 544,
-                freeUploadSlots = true,
-                uploadSpeedKbps = 3200,
-                streamUrl = playableAudioUrls[2]
-            ),
-            SoulseekPeerSource(
-                peerUsername = cleanUser,
-                filename = "04 - Tame Impala - Let It Happen.flac",
+                filename = "03 - Tame Impala - The Less I Know the Better.flac",
                 folder = "Music/Tame Impala/Currents",
-                sizeBytes = 65_000_000L,
+                sizeBytes = 38_000_000L,
                 bitrate = 1411,
                 format = AudioFormat.FLAC,
                 sampleRate = 44100,
                 bitDepth = 16,
-                durationSec = 467,
+                durationSec = 216,
                 freeUploadSlots = true,
-                uploadSpeedKbps = 3200,
-                streamUrl = playableAudioUrls[3]
+                uploadSpeedKbps = 4200,
+                streamUrl = "https://cdnt-preview.dzcdn.net/api/1/1/2/4/6/2464e8ca61661d900696ebfe3d44ba54.mp3"
             )
         )
     }
 
     override suspend fun initiateStream(source: SoulseekPeerSource): String {
-        return source.streamUrl.ifEmpty { playableAudioUrls[0] }
+        return source.streamUrl
+    }
+
+    private suspend fun fetchSongAudioUrl(artist: String, title: String): String = withContext(Dispatchers.IO) {
+        try {
+            val query = "$artist $title".trim()
+            val url = "https://api.deezer.com/search?q=${URLEncoder.encode(query, "UTF-8")}&limit=1"
+            val req = Request.Builder().url(url).build()
+            val res = httpClient.newCall(req).execute()
+            if (res.isSuccessful) {
+                val data = JSONObject(res.body?.string().orEmpty()).optJSONArray("data")
+                if (data != null && data.length() > 0) {
+                    val preview = data.getJSONObject(0).optString("preview")
+                    if (preview.isNotEmpty()) return@withContext preview
+                }
+            }
+        } catch (e: Exception) {
+            Log.d("SoulseekStream", "Fallback audio fetch error: ${e.message}")
+        }
+        "https://cdnt-preview.dzcdn.net/api/1/1/f/b/5/fb5f8b9ecf80fc57df84483bba7ca878.mp3"
     }
 }

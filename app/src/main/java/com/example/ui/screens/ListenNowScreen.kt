@@ -40,14 +40,14 @@ import coil.compose.AsyncImage
 import com.example.data.model.Album
 import com.example.ui.components.CardShelf
 import com.example.ui.components.QualityBadge
-import com.example.ui.theme.PeerActive
 import com.example.ui.theme.SonoraDarkCard
-import com.example.ui.theme.SonoraPink
-import com.example.ui.theme.SonoraRed
+import com.example.ui.theme.SonoraZinc400
+import com.example.ui.theme.SonoraZinc500
 
 @Composable
 fun ListenNowScreen(
     albums: List<Album>,
+    soulseekStatus: String,
     onAlbumClick: (Album) -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
@@ -81,13 +81,13 @@ fun ListenNowScreen(
                         modifier = Modifier
                             .size(7.dp)
                             .clip(CircleShape)
-                            .background(PeerActive)
+                            .background(Color.White)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Soulseek Network Connected",
+                        text = soulseekStatus,
                         style = MaterialTheme.typography.labelMedium,
-                        color = Color(0xFFA1A1AA)
+                        color = SonoraZinc400
                     )
                 }
             }
@@ -112,7 +112,7 @@ fun ListenNowScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp)
-                    .height(200.dp)
+                    .height(210.dp)
                     .shadow(16.dp, RoundedCornerShape(16.dp))
                     .clip(RoundedCornerShape(16.dp))
                     .clickable { onAlbumClick(heroAlbum) }
@@ -131,7 +131,7 @@ fun ListenNowScreen(
                         .fillMaxSize()
                         .background(
                             Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color(0xE60A0A0C))
+                                colors = listOf(Color.Transparent, Color(0xF00A0A0C))
                             )
                         )
                 )
@@ -159,30 +159,34 @@ fun ListenNowScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Shelves
-        CardShelf(
-            title = "Top Picks for You",
-            subtitle = "Curated & Resolved",
-            albums = albums,
-            onAlbumClick = onAlbumClick
-        )
+        // Shelves with real live albums
+        if (albums.isNotEmpty()) {
+            CardShelf(
+                title = "Global Top Albums",
+                subtitle = "Live Charts & Soulseek Sources",
+                albums = albums.take(8),
+                onAlbumClick = onAlbumClick
+            )
 
-        Spacer(modifier = Modifier.height(24.dp))
+            if (albums.size > 8) {
+                Spacer(modifier = Modifier.height(24.dp))
+                CardShelf(
+                    title = "Soulseek Swarm Favorites",
+                    subtitle = "High Speed Verified Rips",
+                    albums = albums.drop(8).take(8),
+                    onAlbumClick = onAlbumClick
+                )
+            }
 
-        CardShelf(
-            title = "Soulseek Swarm Favorites",
-            subtitle = "High Speed Peers",
-            albums = albums.reversed(),
-            onAlbumClick = onAlbumClick
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        CardShelf(
-            title = "Audiophile Archive",
-            subtitle = "24-Bit FLAC",
-            albums = albums.shuffled(),
-            onAlbumClick = onAlbumClick
-        )
+            if (albums.size > 16) {
+                Spacer(modifier = Modifier.height(24.dp))
+                CardShelf(
+                    title = "Audiophile Archive",
+                    subtitle = "Lossless 24-Bit / 96kHz",
+                    albums = albums.drop(16),
+                    onAlbumClick = onAlbumClick
+                )
+            }
+        }
     }
 }

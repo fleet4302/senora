@@ -86,8 +86,10 @@ class SonoraAudioPlayer(
                             .build()
                     )
 
-                    val streamUrl = source.streamUrl.ifEmpty {
-                        "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+                    val streamUrl = when {
+                        source.streamUrl.isNotBlank() -> source.streamUrl
+                        !track.streamUrl.isNullOrBlank() -> track.streamUrl
+                        else -> "https://cdnt-preview.dzcdn.net/api/1/1/f/b/5/fb5f8b9ecf80fc57df84483bba7ca878.mp3"
                     }
                     setDataSource(streamUrl)
 
