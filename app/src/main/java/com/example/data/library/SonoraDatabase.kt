@@ -23,7 +23,7 @@ abstract class SonoraDatabase : RoomDatabase() {
                     context.applicationContext,
                     SonoraDatabase::class.java,
                     "sonora_database"
-                ).fallbackToDestructiveMigration().build()
+                ).fallbackToDestructiveMigration(dropAllTables = true).build()
                 INSTANCE = instance
                 instance
             }

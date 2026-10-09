@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DownloadDone
@@ -73,7 +74,7 @@ fun LibraryScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 8.dp)
             ) {
-                LibraryNavRow(title = "Playlists", icon = Icons.Default.PlaylistPlay)
+                LibraryNavRow(title = "Playlists", icon = Icons.AutoMirrored.Filled.PlaylistPlay)
                 LibraryNavRow(title = "Artists", icon = Icons.Default.Person)
                 LibraryNavRow(title = "Albums", icon = Icons.Default.Album)
                 LibraryNavRow(title = "Songs", icon = Icons.Default.MusicNote)
