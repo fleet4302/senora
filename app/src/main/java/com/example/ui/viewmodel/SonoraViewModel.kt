@@ -196,6 +196,32 @@ class SonoraViewModel(application: Application) : AndroidViewModel(application) 
         _isLyricsViewOpen.value = open
     }
 
+    fun openAlbum(album: Album) {
+        navigateTo(ScreenDestination.AlbumDetails(album))
+        viewModelScope.launch {
+            val fullAlbum = catalogProvider.getAlbumDetails(album.id) ?: album
+            if (fullAlbum.tracks.isNotEmpty()) {
+                val current = _currentScreen.value
+                if (current is ScreenDestination.AlbumDetails && current.album.id == album.id) {
+                    _currentScreen.value = ScreenDestination.AlbumDetails(fullAlbum)
+                }
+            }
+        }
+    }
+
+    fun openArtist(artist: Artist) {
+        navigateTo(ScreenDestination.ArtistDetails(artist))
+        viewModelScope.launch {
+            val fullArtist = catalogProvider.getArtistDetails(artist.id) ?: artist
+            if (fullArtist.topTracks.isNotEmpty()) {
+                val current = _currentScreen.value
+                if (current is ScreenDestination.ArtistDetails && current.artist.id == artist.id) {
+                    _currentScreen.value = ScreenDestination.ArtistDetails(fullArtist)
+                }
+            }
+        }
+    }
+
     // Playback control
     fun playTrack(track: Track, newQueue: List<Track> = emptyList()) {
         if (newQueue.isNotEmpty()) {
@@ -335,12 +361,20 @@ class SonoraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    private var rawSearchJob: Job? = null
+
     // Raw Soulseek Search
     fun searchRawSoulseek(query: String) {
         _rawSoulseekQuery.value = query
-        if (query.isBlank()) return
-        viewModelScope.launch {
+        rawSearchJob?.cancel()
+        if (query.isBlank()) {
+            _rawSoulseekResults.value = emptyList()
+            _isSearchingRawSoulseek.value = false
+            return
+        }
+        rawSearchJob = viewModelScope.launch {
             _isSearchingRawSoulseek.value = true
+            delay(350)
             val results = sourceProvider.searchRawNetwork(
                 query = query,
                 filterFormat = _rawFormatFilter.value,

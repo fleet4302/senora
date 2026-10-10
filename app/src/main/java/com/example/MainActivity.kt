@@ -232,7 +232,7 @@ fun SonoraMainApp(viewModel: SonoraViewModel) {
                                     ListenNowScreen(
                                         albums = albums,
                                         soulseekStatus = soulseekStatus,
-                                        onAlbumClick = { viewModel.navigateTo(ScreenDestination.AlbumDetails(it)) },
+                                        onAlbumClick = { viewModel.openAlbum(it) },
                                         onOpenSettings = { viewModel.navigateTo(ScreenDestination.Settings) }
                                     )
                                 }
@@ -242,8 +242,8 @@ fun SonoraMainApp(viewModel: SonoraViewModel) {
                                     BrowseScreen(
                                         trendingAlbums = trending,
                                         artists = artists,
-                                        onAlbumClick = { viewModel.navigateTo(ScreenDestination.AlbumDetails(it)) },
-                                        onArtistClick = { viewModel.navigateTo(ScreenDestination.ArtistDetails(it)) }
+                                        onAlbumClick = { viewModel.openAlbum(it) },
+                                        onArtistClick = { viewModel.openArtist(it) }
                                     )
                                 }
                                 MainNavigationTab.LIBRARY -> {
@@ -278,14 +278,15 @@ fun SonoraMainApp(viewModel: SonoraViewModel) {
                                         rawFreeSlotsOnly = rawFreeSlots,
                                         onToggleFreeSlots = { viewModel.toggleRawFreeSlotsOnly() },
                                         onTrackClick = { viewModel.playTrack(it) },
-                                        onAlbumClick = { viewModel.navigateTo(ScreenDestination.AlbumDetails(it)) },
+                                        onAlbumClick = { viewModel.openAlbum(it) },
                                         onPlayRawSource = { source ->
                                             val syntheticTrack = Track(
                                                 id = "raw-${source.peerUsername}-${source.filename.hashCode()}",
                                                 title = source.filename.substringBeforeLast("."),
                                                 artist = "@${source.peerUsername}",
                                                 album = source.folder,
-                                                qualityBadge = source.qualityLabel
+                                                qualityBadge = source.qualityLabel,
+                                                streamUrl = source.streamUrl
                                             )
                                             viewModel.playTrack(syntheticTrack)
                                         },
@@ -318,7 +319,7 @@ fun SonoraMainApp(viewModel: SonoraViewModel) {
                                 artist = screen.artist,
                                 onBackClick = { viewModel.navigateBack() },
                                 onTrackClick = { track, tracklist -> viewModel.playTrack(track, tracklist) },
-                                onAlbumClick = { viewModel.navigateTo(ScreenDestination.AlbumDetails(it)) }
+                                onAlbumClick = { viewModel.openAlbum(it) }
                             )
                         }
                         is ScreenDestination.PeerShares -> {

@@ -293,6 +293,24 @@ fun SearchScreen(
                             }
                         }
                     }
+
+                    if (catalogResult.tracks.isEmpty() && catalogResult.albums.isEmpty() && catalogResult.artists.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 40.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No catalog results for \"$catalogQuery\".\nTry searching the Raw Soulseek Network tab.",
+                                    color = Color(0xFFA1A1AA),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
+                        }
+                    }
                 }
             } else {
                 // Suggestions prompt
@@ -482,7 +500,7 @@ fun SearchScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "Type any artist, song, or folder name to query\nconnected Soulseek peers directly in real time.",
+                        text = if (rawSoulseekQuery.isNotBlank()) "No files found for \"$rawSoulseekQuery\" on peer network." else "Type any artist, song, or folder name to query\nconnected Soulseek peers directly in real time.",
                         color = Color(0xFF71717A),
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center

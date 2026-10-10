@@ -169,6 +169,29 @@ fun AlbumScreen(
         }
 
         // Numbered Tracks List
+        if (album.tracks.isEmpty()) {
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 36.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        color = Color.White,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Resolving album tracklist from catalog...",
+                        color = Color(0xFFA1A1AA),
+                        fontSize = 13.sp
+                    )
+                }
+            }
+        }
+
         itemsIndexed(album.tracks) { index, track ->
             val isPlayingThis = track.id == currentTrackId
 

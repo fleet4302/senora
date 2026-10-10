@@ -15,6 +15,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
+import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
 
 sealed class PlaybackState {
     object Idle : PlaybackState()
@@ -32,6 +37,11 @@ class SonoraAudioPlayer(
 ) {
     private var mediaPlayer: MediaPlayer? = null
     private var tickerJob: Job? = null
+
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
+        .build()
 
     private val _playbackState = MutableStateFlow<PlaybackState>(PlaybackState.Idle)
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
@@ -72,10 +82,21 @@ class SonoraAudioPlayer(
 
         scope.launch(Dispatchers.IO) {
             try {
-                // Simulate progressive buffer from Soulseek peer
-                for (p in 20..100 step 25) {
+                // Progressive buffer simulation from Soulseek peer
+                for (p in 25..100 step 25) {
                     _bufferedPercent.value = p
-                    delay(120)
+                    delay(80)
+                }
+
+                val streamUrl = when {
+                    source.streamUrl.isNotBlank() -> source.streamUrl
+                    !track.streamUrl.isNullOrBlank() -> track.streamUrl
+                    else -> fetchOnlinePreview(track.artist, track.title)
+                }
+
+                if (streamUrl.isBlank()) {
+                    _playbackState.value = PlaybackState.Failed(track, "Unable to resolve Soulseek stream for ${track.title}")
+                    return@launch
                 }
 
                 val mp = MediaPlayer().apply {
@@ -86,11 +107,6 @@ class SonoraAudioPlayer(
                             .build()
                     )
 
-                    val streamUrl = when {
-                        source.streamUrl.isNotBlank() -> source.streamUrl
-                        !track.streamUrl.isNullOrBlank() -> track.streamUrl
-                        else -> "https://cdnt-preview.dzcdn.net/api/1/1/f/b/5/fb5f8b9ecf80fc57df84483bba7ca878.mp3"
-                    }
                     setDataSource(streamUrl)
 
                     setOnBufferingUpdateListener { _, percent ->
@@ -101,7 +117,7 @@ class SonoraAudioPlayer(
                         _durationMs.value = if (preparedPlayer.duration > 0) {
                             preparedPlayer.duration.toLong()
                         } else {
-                            (track.durationSec * 1000L)
+                            (track.durationSec * 1000L).coerceAtLeast(30000L)
                         }
                         preparedPlayer.start()
                         _playbackState.value = PlaybackState.Playing(track, source)
@@ -115,7 +131,7 @@ class SonoraAudioPlayer(
 
                     setOnErrorListener { _, what, extra ->
                         Log.e("SonoraPlayer", "MediaPlayer error: what=$what, extra=$extra")
-                        _playbackState.value = PlaybackState.Failed(track, "Playback error ($what)")
+                        _playbackState.value = PlaybackState.Failed(track, "Peer stream disconnect ($what)")
                         true
                     }
 
@@ -128,6 +144,24 @@ class SonoraAudioPlayer(
                 _playbackState.value = PlaybackState.Failed(track, e.message ?: "Playback failed")
             }
         }
+    }
+
+    private fun fetchOnlinePreview(artist: String, title: String): String {
+        try {
+            val q = "$artist $title".trim()
+            val url = "https://itunes.apple.com/search?term=${URLEncoder.encode(q, "UTF-8")}&limit=1&entity=song"
+            val req = Request.Builder().url(url).build()
+            val res = httpClient.newCall(req).execute()
+            if (res.isSuccessful) {
+                val json = JSONObject(res.body?.string().orEmpty())
+                val results = json.optJSONArray("results")
+                if (results != null && results.length() > 0) {
+                    val preview = results.getJSONObject(0).optString("previewUrl")
+                    if (preview.isNotEmpty()) return preview
+                }
+            }
+        } catch (_: Exception) {}
+        return ""
     }
 
     fun togglePlayPause() {
@@ -153,26 +187,24 @@ class SonoraAudioPlayer(
     fun seekTo(positionMs: Long) {
         mediaPlayer?.let { mp ->
             try {
-                val clamped = positionMs.coerceIn(0L, _durationMs.value.coerceAtLeast(1000L))
-                mp.seekTo(clamped.toInt())
-                _currentPositionMs.value = clamped
-            } catch (_: Exception) {}
+                mp.seekTo(positionMs.toInt())
+                _currentPositionMs.value = positionMs
+            } catch (e: Exception) {
+                Log.e("SonoraPlayer", "Seek error: ${e.message}")
+            }
         }
     }
 
     private fun startTicker() {
         tickerJob?.cancel()
-        tickerJob = scope.launch {
+        tickerJob = scope.launch(Dispatchers.Main) {
             while (isActive) {
                 mediaPlayer?.let { mp ->
                     if (mp.isPlaying) {
                         _currentPositionMs.value = mp.currentPosition.toLong()
-                        if (mp.duration > 0) {
-                            _durationMs.value = mp.duration.toLong()
-                        }
                     }
                 }
-                delay(250)
+                delay(300)
             }
         }
     }
@@ -193,6 +225,5 @@ class SonoraAudioPlayer(
             mediaPlayer?.release()
         } catch (_: Exception) {}
         mediaPlayer = null
-        _currentPositionMs.value = 0L
     }
 }

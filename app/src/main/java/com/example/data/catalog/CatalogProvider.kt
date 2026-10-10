@@ -7,6 +7,7 @@ import com.example.data.model.Track
 
 interface CatalogProvider {
     suspend fun getListenNowAlbums(): List<Album>
+    suspend fun getTopChartTracks(): List<Track>
     suspend fun getBrowseTrending(): List<Album>
     suspend fun getCuratedArtists(): List<Artist>
     suspend fun searchCatalog(query: String): CatalogSearchResult

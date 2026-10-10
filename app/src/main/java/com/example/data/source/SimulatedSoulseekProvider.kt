@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit
 class SimulatedSoulseekProvider(
     private val httpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(6, TimeUnit.SECONDS)
         .build()
 ) : SourceProvider {
 
@@ -26,9 +26,9 @@ class SimulatedSoulseekProvider(
         PeerProfile("flac_hoarder_99", 4200, true, 0, "DE", AudioFormat.FLAC, 24, 96000),
         PeerProfile("vocaloid_queen", 4800, true, 0, "JP", AudioFormat.FLAC, 24, 88200),
         PeerProfile("lossless_vault_eu", 3100, true, 0, "NL", AudioFormat.FLAC, 16, 44100),
-        PeerProfile("underground_tapes", 1850, false, 2, "UK", AudioFormat.MP3_320, 16, 44100),
+        PeerProfile("underground_tapes", 1850, false, 1, "UK", AudioFormat.MP3_320, 16, 44100),
         PeerProfile("analog_archivist", 5400, true, 0, "US", AudioFormat.FLAC, 24, 192000),
-        PeerProfile("retro_discography", 950, false, 3, "SE", AudioFormat.MP3_V0, 16, 44100)
+        PeerProfile("retro_discography", 950, false, 2, "SE", AudioFormat.MP3_V0, 16, 44100)
     )
 
     private data class PeerProfile(
@@ -43,14 +43,23 @@ class SimulatedSoulseekProvider(
     )
 
     override fun resolveCandidates(track: Track): Flow<List<SoulseekPeerSource>> = flow {
-        // Resolve the real audio stream for this exact song
-        val realSongAudioUrl = track.streamUrl ?: fetchSongAudioUrl(track.artist, track.title)
+        // Resolve the authentic audio stream for this exact song
+        val realSongAudioUrl = if (!track.streamUrl.isNullOrBlank()) {
+            track.streamUrl
+        } else {
+            fetchSongAudioUrl(track.artist, track.title)
+        }
+
         val candidates = mutableListOf<SoulseekPeerSource>()
-        val baseFilename = "%02d - %s - %s".format(track.trackNumber, track.artist, track.title)
+        val baseFilename = "%02d - %s - %s".format(
+            if (track.trackNumber > 0) track.trackNumber else 1,
+            track.artist.replace("/", "-"),
+            track.title.replace("/", "-")
+        )
         val sanitizedBase = PeerSanitizer.sanitizeFilename(baseFilename)
 
-        // Wave 1: Immediate fast peers responding in ~500ms
-        delay(400)
+        // Wave 1: Immediate fast peer response in ~350ms
+        delay(350)
         candidates.add(
             SoulseekPeerSource(
                 peerUsername = peerProfiles[0].username,
@@ -80,7 +89,7 @@ class SimulatedSoulseekProvider(
                 format = AudioFormat.MP3_320,
                 sampleRate = 44100,
                 bitDepth = 16,
-                durationSec = track.durationSec + 1,
+                durationSec = track.durationSec,
                 freeUploadSlots = false,
                 queueLength = 1,
                 uploadSpeedKbps = peerProfiles[3].speedKbps,
@@ -91,8 +100,8 @@ class SimulatedSoulseekProvider(
         )
         emit(candidates.toList())
 
-        // Wave 2: Results trickling in
-        delay(800)
+        // Wave 2: Results trickling in (~700ms)
+        delay(350)
         candidates.add(
             SoulseekPeerSource(
                 peerUsername = peerProfiles[1].username,
@@ -114,8 +123,8 @@ class SimulatedSoulseekProvider(
         )
         emit(candidates.toList())
 
-        // Wave 3: Final sweep
-        delay(900)
+        // Wave 3: Final sweep (~1s total)
+        delay(350)
         candidates.add(
             SoulseekPeerSource(
                 peerUsername = peerProfiles[2].username,
@@ -135,16 +144,35 @@ class SimulatedSoulseekProvider(
                 isCompleteAlbumFolder = true
             )
         )
+        candidates.add(
+            SoulseekPeerSource(
+                peerUsername = peerProfiles[5].username,
+                filename = "$sanitizedBase.mp3",
+                folder = "Shares/MP3/${track.artist}/${track.album}",
+                sizeBytes = 7_800_000L,
+                bitrate = 245,
+                format = AudioFormat.MP3_V0,
+                sampleRate = 44100,
+                bitDepth = 16,
+                durationSec = track.durationSec,
+                freeUploadSlots = false,
+                queueLength = 2,
+                uploadSpeedKbps = peerProfiles[5].speedKbps,
+                country = peerProfiles[5].country,
+                streamUrl = realSongAudioUrl,
+                isCompleteAlbumFolder = false
+            )
+        )
         emit(candidates.toList())
     }
 
     override fun resolveAlbumCandidates(albumTitle: String, artist: String, trackCount: Int): Flow<List<SoulseekPeerSource>> = flow {
-        delay(600)
+        delay(400)
         val albumCandidates = listOf(
             SoulseekPeerSource(
                 peerUsername = "flac_hoarder_99",
-                filename = "$artist - $albumTitle [Complete 24-96 Lossless]",
-                folder = "Music/$artist/$albumTitle [Complete]",
+                filename = "$artist - $albumTitle [Complete Album FLAC]",
+                folder = "Music/$artist/$albumTitle [FLAC 24-96]",
                 sizeBytes = 540_000_000L,
                 bitrate = 1411,
                 format = AudioFormat.FLAC,
@@ -183,7 +211,8 @@ class SimulatedSoulseekProvider(
         freeSlotsOnly: Boolean
     ): List<SoulseekPeerSource> = withContext(Dispatchers.IO) {
         val q = query.trim()
-        val realUrl = fetchSongAudioUrl("", q)
+        if (q.isEmpty()) return@withContext emptyList()
+
         val results = mutableListOf<SoulseekPeerSource>()
 
         val peerPool = listOf(
@@ -195,40 +224,72 @@ class SimulatedSoulseekProvider(
             Triple("retro_discography", AudioFormat.MP3_V0, 950)
         )
 
-        for ((idx, peer) in peerPool.withIndex()) {
-            val format = peer.second
-            val ext = format.extension
-            val sampleRate = if (format == AudioFormat.FLAC) 96000 else 44100
-            val bitDepth = if (format == AudioFormat.FLAC) 24 else 16
-            val bitrate = if (format == AudioFormat.FLAC) 1411 else 320
+        // Query real tracks from iTunes API for this query
+        try {
+            val url = "https://itunes.apple.com/search?term=${URLEncoder.encode(q, "UTF-8")}&limit=20&entity=song"
+            val req = Request.Builder().url(url).build()
+            val res = httpClient.newCall(req).execute()
+            if (res.isSuccessful) {
+                val json = JSONObject(res.body?.string().orEmpty())
+                val data = json.optJSONArray("results")
+                if (data != null && data.length() > 0) {
+                    for (i in 0 until data.length()) {
+                        val t = data.getJSONObject(i)
+                        val title = t.optString("trackName", "")
+                        val artist = t.optString("artistName", "Unknown Artist")
+                        val album = t.optString("collectionName", "Album")
+                        val preview = t.optString("previewUrl", "")
+                        val durMs = t.optLong("trackTimeMillis", 210000L)
+                        val trackNum = t.optInt("trackNumber", i + 1)
 
-            results.add(
-                SoulseekPeerSource(
-                    peerUsername = peer.first,
-                    filename = PeerSanitizer.sanitizeFilename("$q - Master Track ${idx + 1}.$ext"),
-                    folder = "Shared/$q Collection/Disc ${idx % 2 + 1}",
-                    sizeBytes = if (format == AudioFormat.FLAC) 42_000_000L else 9_500_000L,
-                    bitrate = bitrate,
-                    format = format,
-                    sampleRate = sampleRate,
-                    bitDepth = bitDepth,
-                    durationSec = 210,
-                    freeUploadSlots = idx % 3 != 0,
-                    queueLength = if (idx % 3 == 0) 1 else 0,
-                    uploadSpeedKbps = peer.third,
-                    country = if (idx % 2 == 0) "DE" else "US",
-                    streamUrl = realUrl
-                )
-            )
-        }
+                        if (title.isNotBlank()) {
+                            val peer = peerPool[i % peerPool.size]
+                            val format = peer.second
+                            val ext = format.extension
+                            val filename = "%02d - %s - %s.%s".format(trackNum, artist.replace("/", "-"), title.replace("/", "-"), ext)
 
-        results.filter { source ->
-            if (freeSlotsOnly && !source.freeUploadSlots) return@filter false
-            if (filterFormat != null && filterFormat != "All") {
-                if (!source.format.displayName.contains(filterFormat, ignoreCase = true)) return@filter false
+                            val candidate = SoulseekPeerSource(
+                                peerUsername = peer.first,
+                                filename = PeerSanitizer.sanitizeFilename(filename),
+                                folder = "Music/$artist/$album [${format.displayName}]",
+                                sizeBytes = if (format.isLossless) 44_000_000L else 9_500_000L,
+                                bitrate = if (format.isLossless) 1411 else 320,
+                                format = format,
+                                sampleRate = if (format.isLossless) 96000 else 44100,
+                                bitDepth = if (format.isLossless) 24 else 16,
+                                durationSec = (durMs / 1000).toInt(),
+                                freeUploadSlots = i % 3 != 0,
+                                queueLength = if (i % 3 == 0) 1 else 0,
+                                uploadSpeedKbps = peer.third,
+                                country = if (i % 2 == 0) "DE" else "US",
+                                streamUrl = preview
+                            )
+                            results.add(candidate)
+                        }
+                    }
+                }
             }
-            true
+        } catch (e: Exception) {
+            Log.w("SoulseekSearch", "iTunes search error during raw search: ${e.message}")
         }
+
+        // Apply filters
+        var filtered = results.toList()
+        if (!filterFormat.isNullOrBlank() && filterFormat != "All") {
+            filtered = filtered.filter {
+                when (filterFormat.uppercase()) {
+                    "FLAC" -> it.format == AudioFormat.FLAC
+                    "320" -> it.format == AudioFormat.MP3_320
+                    "V0" -> it.format == AudioFormat.MP3_V0
+                    else -> true
+                }
+            }
+        }
+        if (freeSlotsOnly) {
+            filtered = filtered.filter { it.freeUploadSlots }
+        }
+
+        filtered
     }
 
     override suspend fun browsePeerShares(peerUsername: String): List<SoulseekPeerSource> = withContext(Dispatchers.IO) {
@@ -246,7 +307,7 @@ class SimulatedSoulseekProvider(
                 durationSec = 320,
                 freeUploadSlots = true,
                 uploadSpeedKbps = 4200,
-                streamUrl = "https://cdnt-preview.dzcdn.net/api/1/1/f/b/5/fb5f8b9ecf80fc57df84483bba7ca878.mp3"
+                streamUrl = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/5d/93/d8/5d93d83f-ad1e-da4d-1d79-9937bdff24ec/mzaf_14396932211949300852.plus.aac.p.m4a"
             ),
             SoulseekPeerSource(
                 peerUsername = cleanUser,
@@ -260,7 +321,7 @@ class SimulatedSoulseekProvider(
                 durationSec = 284,
                 freeUploadSlots = true,
                 uploadSpeedKbps = 4200,
-                streamUrl = "https://cdnt-preview.dzcdn.net/api/1/1/a/2/b/a2bfa54c59a58bb0e0ffb471cb736ea2.mp3"
+                streamUrl = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/f1/ed/05/f1ed0562-876c-a84a-c4ff-70613135b818/mzaf_18061085714629562351.plus.aac.p.m4a"
             ),
             SoulseekPeerSource(
                 peerUsername = cleanUser,
@@ -274,7 +335,21 @@ class SimulatedSoulseekProvider(
                 durationSec = 216,
                 freeUploadSlots = true,
                 uploadSpeedKbps = 4200,
-                streamUrl = "https://cdnt-preview.dzcdn.net/api/1/1/2/4/6/2464e8ca61661d900696ebfe3d44ba54.mp3"
+                streamUrl = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/8b/55/f3/8b55f3a3-3204-8930-f156-82843546950e/mzaf_9370328603131228430.plus.aac.p.m4a"
+            ),
+            SoulseekPeerSource(
+                peerUsername = cleanUser,
+                filename = "04 - Kendrick Lamar - Alright.flac",
+                folder = "Music/Kendrick Lamar/To Pimp a Butterfly",
+                sizeBytes = 42_000_000L,
+                bitrate = 1411,
+                format = AudioFormat.FLAC,
+                sampleRate = 44100,
+                bitDepth = 16,
+                durationSec = 219,
+                freeUploadSlots = true,
+                uploadSpeedKbps = 4200,
+                streamUrl = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/3b/27/4e/3b274eab-c2de-84c5-a68d-4f78f3269bac/mzaf_16117050990489545534.plus.aac.p.m4a"
             )
         )
     }
@@ -283,22 +358,43 @@ class SimulatedSoulseekProvider(
         return source.streamUrl
     }
 
-    private suspend fun fetchSongAudioUrl(artist: String, title: String): String = withContext(Dispatchers.IO) {
-        try {
-            val query = "$artist $title".trim()
-            val url = "https://api.deezer.com/search?q=${URLEncoder.encode(query, "UTF-8")}&limit=1"
-            val req = Request.Builder().url(url).build()
-            val res = httpClient.newCall(req).execute()
-            if (res.isSuccessful) {
-                val data = JSONObject(res.body?.string().orEmpty()).optJSONArray("data")
-                if (data != null && data.length() > 0) {
-                    val preview = data.getJSONObject(0).optString("preview")
-                    if (preview.isNotEmpty()) return@withContext preview
+    suspend fun fetchSongAudioUrl(artist: String, title: String): String = withContext(Dispatchers.IO) {
+        val query = "$artist $title".trim()
+        if (query.isNotEmpty()) {
+            try {
+                val url = "https://itunes.apple.com/search?term=${URLEncoder.encode(query, "UTF-8")}&limit=1&entity=song"
+                val req = Request.Builder().url(url).build()
+                val res = httpClient.newCall(req).execute()
+                if (res.isSuccessful) {
+                    val json = JSONObject(res.body?.string().orEmpty())
+                    val data = json.optJSONArray("results")
+                    if (data != null && data.length() > 0) {
+                        val preview = data.getJSONObject(0).optString("previewUrl")
+                        if (preview.isNotEmpty()) return@withContext preview
+                    }
                 }
+            } catch (e: Exception) {
+                Log.d("SoulseekStream", "iTunes audio fetch note: ${e.message}")
             }
-        } catch (e: Exception) {
-            Log.d("SoulseekStream", "Fallback audio fetch error: ${e.message}")
         }
-        "https://cdnt-preview.dzcdn.net/api/1/1/f/b/5/fb5f8b9ecf80fc57df84483bba7ca878.mp3"
+
+        // Try title only if query had artist
+        if (title.isNotBlank()) {
+            try {
+                val url = "https://itunes.apple.com/search?term=${URLEncoder.encode(title, "UTF-8")}&limit=1&entity=song"
+                val req = Request.Builder().url(url).build()
+                val res = httpClient.newCall(req).execute()
+                if (res.isSuccessful) {
+                    val json = JSONObject(res.body?.string().orEmpty())
+                    val data = json.optJSONArray("results")
+                    if (data != null && data.length() > 0) {
+                        val preview = data.getJSONObject(0).optString("previewUrl")
+                        if (preview.isNotEmpty()) return@withContext preview
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        ""
     }
 }
